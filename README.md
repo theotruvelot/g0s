@@ -1,4 +1,4 @@
-# g0s (ghost) 👻
+# g0s
 
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/theotruvelot/g0s)](https://goreportcard.com/report/github.com/theotruvelot/g0s)
@@ -7,13 +7,7 @@
 [![Go version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://golang.org/doc/install)
 
 
-A powerful terminal-based server management tool built with Go — fast, intuitive, and lightweight.
-
-[Getting Started](#getting-started) •
-[Features](#features) •
-[Contributing](CONTRIBUTING.md)
-
-</div>
+g0s (pronounced "ghost") is a powerful terminal-based server management tool built with Go — fast, intuitive, and lightweight.
 
 ## 🚀 Features
 
