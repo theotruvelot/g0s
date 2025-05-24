@@ -151,6 +151,83 @@ func TestClient_Do(t *testing.T) {
 	}
 }
 
+func TestClient_Do_ErrorCases(t *testing.T) {
+	tests := []struct {
+		name      string
+		method    string
+		path      string
+		baseURL   string
+		body      io.Reader
+		wantErr   bool
+		errorType string
+	}{
+		{
+			name:      "invalid method",
+			method:    "INVALID\nMETHOD",
+			path:      "/test",
+			baseURL:   "http://example.com",
+			wantErr:   true,
+			errorType: "request creation",
+		},
+		{
+			name:      "network error - invalid URL",
+			method:    http.MethodGet,
+			path:      "/test",
+			baseURL:   "://invalid-url",
+			wantErr:   true,
+			errorType: "request creation",
+		},
+		{
+			name:      "network error - connection refused",
+			method:    http.MethodGet,
+			path:      "/test",
+			baseURL:   "http://localhost:1", // Port that should be closed
+			wantErr:   true,
+			errorType: "network",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := NewClient(tt.baseURL, "", time.Second)
+			ctx := context.Background()
+
+			resp, err := client.Do(ctx, tt.method, tt.path, tt.body)
+
+			assert.Error(t, err)
+			assert.Nil(t, resp)
+
+			var httpErr *HTTPError
+			assert.ErrorAs(t, err, &httpErr)
+			assert.Contains(t, httpErr.Error(), tt.method)
+			assert.Contains(t, httpErr.Error(), "HTTP request failed")
+		})
+	}
+}
+
+func TestClient_Do_CancelledContext(t *testing.T) {
+	// Create a server that takes time to respond
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "", time.Second)
+
+	// Create a context that will be cancelled
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	resp, err := client.Do(ctx, http.MethodGet, "/test", nil)
+
+	assert.Error(t, err)
+	assert.Nil(t, resp)
+
+	var httpErr *HTTPError
+	assert.ErrorAs(t, err, &httpErr)
+}
+
 func TestClient_Convenience_Methods(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {

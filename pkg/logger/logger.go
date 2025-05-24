@@ -14,7 +14,8 @@ const (
 	_defaultComponent  = "default"
 )
 
-var _log *zap.Logger
+// Initialize with default config
+var _log = newLogger(defaultConfig())
 
 type Config struct {
 	// Level defines the minimum enabled logging level
@@ -27,20 +28,23 @@ type Config struct {
 	Component string
 }
 
-func init() {
-	initLogger(Config{
+// defaultConfig returns the default logger configuration
+func defaultConfig() Config {
+	return Config{
 		Level:      _defaultLevel,
 		Format:     _defaultFormat,
 		OutputPath: _defaultOutputPath,
 		Component:  _defaultComponent,
-	})
+	}
 }
 
+// InitLogger initializes the global logger with the given configuration
 func InitLogger(cfg Config) {
-	initLogger(cfg)
+	_log = newLogger(cfg)
 }
 
-func initLogger(cfg Config) {
+// newLogger creates a new logger instance with the given configuration
+func newLogger(cfg Config) *zap.Logger {
 	level := zap.InfoLevel
 	switch cfg.Level {
 	case "debug":
@@ -82,7 +86,7 @@ func initLogger(cfg Config) {
 	}
 
 	core := zapcore.NewCore(encoder, output, zap.NewAtomicLevelAt(level))
-	_log = zap.New(core).With(zap.String("component", cfg.Component))
+	return zap.New(core).With(zap.String("component", cfg.Component))
 }
 
 func Info(msg string, fields ...zap.Field) {

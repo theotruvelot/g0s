@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,6 +12,117 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
+
+func TestDefaultConfig(t *testing.T) {
+	config := defaultConfig()
+
+	assert.Equal(t, _defaultLevel, config.Level)
+	assert.Equal(t, _defaultFormat, config.Format)
+	assert.Equal(t, _defaultOutputPath, config.OutputPath)
+	assert.Equal(t, _defaultComponent, config.Component)
+}
+
+func TestNewLogger_AllCases(t *testing.T) {
+	tests := []struct {
+		name           string
+		config         Config
+		expectedLevel  zapcore.Level
+		expectedFormat string
+		setupFile      func() (string, func())
+	}{
+		{
+			name: "debug level with json format",
+			config: Config{
+				Level:      "debug",
+				Format:     "json",
+				OutputPath: "stdout",
+				Component:  "test",
+			},
+			expectedLevel:  zap.DebugLevel,
+			expectedFormat: "json",
+		},
+		{
+			name: "warn level with console format",
+			config: Config{
+				Level:      "warn",
+				Format:     "console",
+				OutputPath: "stderr",
+				Component:  "test",
+			},
+			expectedLevel:  zap.WarnLevel,
+			expectedFormat: "console",
+		},
+		{
+			name: "error level with console format",
+			config: Config{
+				Level:      "error",
+				Format:     "console",
+				OutputPath: "stdout",
+				Component:  "test",
+			},
+			expectedLevel:  zap.ErrorLevel,
+			expectedFormat: "console",
+		},
+		{
+			name: "invalid level defaults to info",
+			config: Config{
+				Level:      "invalid",
+				Format:     "json",
+				OutputPath: "stdout",
+				Component:  "test",
+			},
+			expectedLevel:  zap.InfoLevel,
+			expectedFormat: "json",
+		},
+		{
+			name: "file output success",
+			config: Config{
+				Level:      "info",
+				Format:     "json",
+				OutputPath: "", // Will be set by setupFile
+				Component:  "test",
+			},
+			expectedLevel:  zap.InfoLevel,
+			expectedFormat: "json",
+			setupFile: func() (string, func()) {
+				tmpDir := os.TempDir()
+				fileName := filepath.Join(tmpDir, "test_log.log")
+				return fileName, func() {
+					os.Remove(fileName)
+				}
+			},
+		},
+		{
+			name: "file output failure fallback to stdout",
+			config: Config{
+				Level:      "info",
+				Format:     "json",
+				OutputPath: "/invalid/path/that/does/not/exist.log",
+				Component:  "test",
+			},
+			expectedLevel:  zap.InfoLevel,
+			expectedFormat: "json",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cleanup func()
+			if tt.setupFile != nil {
+				path, cleanupFunc := tt.setupFile()
+				tt.config.OutputPath = path
+				cleanup = cleanupFunc
+			}
+			if cleanup != nil {
+				defer cleanup()
+			}
+
+			logger := newLogger(tt.config)
+			assert.NotNil(t, logger)
+			assert.True(t, logger.Core().Enabled(tt.expectedLevel))
+		})
+	}
+}
 
 func TestInitLogger(t *testing.T) {
 	tests := []struct {
