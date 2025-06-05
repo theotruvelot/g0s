@@ -120,7 +120,7 @@ go run ./cmd/server/main.go
 To run the Terminal UI in development mode:
 
 ```sh
-go run ./cmd/tui/main.go
+go run ./cmd/cli/main.go
 ```
 
 ## Create a pull request
@@ -177,6 +177,12 @@ Build a specific component:
 # Build the agent
 make build-agent
 
+# Build the server
+make build-server
+
+# Build the CLI
+make build-cli
+
 # Or manually
 go build ./cmd/agent/main.go
 
@@ -184,7 +190,7 @@ go build ./cmd/agent/main.go
 go build ./cmd/server/main.go
 
 # Build the TUI
-go build ./cmd/tui/main.go
+go build ./cmd/cli/main.go
 ```
 
 ## Community channels

@@ -16,13 +16,22 @@ const (
 )
 
 type HTTPError struct {
-	URL    string
-	Method string
-	Err    error
+	URL        string
+	Method     string
+	StatusCode int
+	Err        error
 }
 
 func (e *HTTPError) Error() string {
+	if e.StatusCode != 0 {
+		return fmt.Sprintf("HTTP request failed [%s %s]: server returned status code %d", e.Method, e.URL, e.StatusCode)
+	}
 	return fmt.Sprintf("HTTP request failed [%s %s]: %v", e.Method, e.URL, e.Err)
+}
+
+// isSuccessStatus returns true if the status code is in the 2xx range
+func isSuccessStatus(statusCode int) bool {
+	return statusCode >= 200 && statusCode < 300
 }
 
 type Client struct {
@@ -56,7 +65,12 @@ func (c *Client) Do(ctx context.Context, method, path string, body io.Reader) (*
 		}
 	}
 
-	url := fmt.Sprintf("%s%s", c.baseURL, path)
+	// Ensure path starts with /
+	if len(path) > 0 && path[0] != '/' {
+		path = "/" + path
+	}
+
+	url := c.baseURL + path
 
 	c.log.Debug("Creating HTTP request",
 		zap.String("url", url),
@@ -104,6 +118,16 @@ func (c *Client) Do(ctx context.Context, method, path string, body io.Reader) (*
 		zap.String("url", url),
 		zap.String("method", method),
 		zap.Int("status", resp.StatusCode))
+
+	// Check for non-2xx status codes
+	if !isSuccessStatus(resp.StatusCode) {
+		resp.Body.Close()
+		return nil, &HTTPError{
+			Method:     method,
+			URL:        url,
+			StatusCode: resp.StatusCode,
+		}
+	}
 
 	return resp, nil
 }
