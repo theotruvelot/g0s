@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/theotruvelot/g0s/internal/cli"
 	"github.com/theotruvelot/g0s/pkg/logger"
+	"github.com/theotruvelot/g0s/pkg/utils"
 )
 
 type cliError struct {
@@ -49,6 +50,14 @@ func main() {
 }
 
 func runCLI(_ *cobra.Command, _ []string) error {
+	// Validate server URL first
+	if err := utils.ValidateServerURL(serverURL); err != nil {
+		return &cliError{op: "validating server URL", err: err}
+	}
+
+	// Normalize the URL (remove trailing slash)
+	serverURL = utils.NormalizeServerURL(serverURL)
+
 	logger.InitLogger(logger.Config{
 		Level:      logLevel,
 		Format:     "json",

@@ -65,6 +65,15 @@ test-coverage:
 	@go tool cover -func=coverage.out
 	@rm coverage.out
 
+test-coverage-nocache:
+	@echo "Running tests with coverage without cache..."
+	@go clean -testcache
+	@go test -count=1 -cover ./...
+	@echo "\nDetailed coverage report:"
+	@go test -coverprofile=coverage.out ./...
+	@go tool cover -func=coverage.out
+	@rm coverage.out
+
 clean:
 	@rm -rf bin
 	@echo "Cleaned build artifacts"

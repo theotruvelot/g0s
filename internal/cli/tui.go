@@ -33,7 +33,7 @@ func RunWithConfig(serverURL, apiToken string, log *zap.Logger) error {
 	}
 
 	// Handle any final cleanup or error reporting
-	if rootModel, ok := finalModel.(models.RootModel); ok {
+	if rootModel, ok := finalModel.(*models.RootModel); ok {
 		if rootModel.HasError() {
 			return fmt.Errorf("application ended with error: %s", rootModel.GetError())
 		}

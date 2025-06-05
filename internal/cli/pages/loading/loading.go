@@ -12,58 +12,40 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/theotruvelot/g0s/internal/cli/messages"
 	"github.com/theotruvelot/g0s/internal/cli/styles"
 	"github.com/theotruvelot/g0s/pkg/client"
 	"go.uber.org/zap"
 )
 
-// Configuration constants
+// Constants
 const (
-	healthCheckTimeout = 10 * time.Second
 	maxRetries         = 3
 	retryDelay         = 2 * time.Second
+	healthCheckTimeout = 10 * time.Second
 	progressBarWidth   = 60
 )
 
-// Timing constants for each step
-var stepTimings = map[LoadingState]time.Duration{
-	StateStep1:      800 * time.Millisecond,
-	StateStep2:      800 * time.Millisecond,
-	StateStep3:      800 * time.Millisecond,
-	StateStep4:      600 * time.Millisecond,
-	StateStep5:      1 * time.Second,
-	StateFinalizing: 800 * time.Millisecond,
+// LoadingState represents the current state
+type LoadingState int
+
+const (
+	StateConnecting LoadingState = iota
+	StateHealthCheck
+	StateSuccess
+	StateError
+	StateRetrying
+)
+
+// HealthCheckResult represents the result of a health check
+type HealthCheckResult struct {
+	Success   bool
+	Status    string
+	Latency   string
+	Error     error
+	Timestamp string
 }
 
-// Progress percentages for each state
-var stateProgress = map[LoadingState]float64{
-	StateInitializing: 0.0,
-	StateStep1:        0.25,
-	StateStep2:        0.50,
-	StateStep3:        0.75,
-	StateHealthCheck:  0.85,
-	StateStep4:        0.90,
-	StateStep5:        0.95,
-	StateFinalizing:   1.0,
-}
-
-// State messages
-var stateMessages = map[LoadingState]string{
-	StateInitializing: "Initializing application...",
-	StateStep1:        "Loading modules...",
-	StateStep2:        "Configuring interface...",
-	StateStep3:        "Connecting to server...",
-	StateHealthCheck:  "Checking connection...",
-	StateStep4:        "Verification successful",
-	StateStep5:        "Starting application...",
-	StateFinalizing:   "Finalizing...",
-	StateSuccess:      "Connection successful!",
-	StateError:        "Connection failed",
-	StateRetrying:     "Retrying connection...",
-}
-
-// HealthResponse represents the expected response from the health endpoint
+// HealthResponse represents the server health response
 type HealthResponse struct {
 	Status    string            `json:"status"`
 	Timestamp string            `json:"timestamp"`
@@ -71,104 +53,29 @@ type HealthResponse struct {
 	Version   string            `json:"version,omitempty"`
 }
 
-// LoadingState represents the current state of the loading process
-type LoadingState int
-
-const (
-	StateInitializing LoadingState = iota
-	StateStep1                     // 25%
-	StateStep2                     // 50%
-	StateStep3                     // 75%
-	StateHealthCheck               // 85%
-	StateStep4                     // 90%
-	StateStep5                     // 95%
-	StateFinalizing                // 100%
-	StateSuccess
-	StateError
-	StateRetrying
-)
-
-// String returns the string representation of the loading state
-func (s LoadingState) String() string {
-	if msg, exists := stateMessages[s]; exists {
-		return msg
-	}
-	return "Unknown state"
-}
-
-// Progress returns the progress percentage for the state
-func (s LoadingState) Progress() float64 {
-	if progress, exists := stateProgress[s]; exists {
-		return progress
-	}
-	return 0.0
-}
-
-// NextState returns the next state in the loading sequence
-func (s LoadingState) NextState() LoadingState {
-	switch s {
-	case StateStep1:
-		return StateStep2
-	case StateStep2:
-		return StateStep3
-	case StateStep3:
-		return StateHealthCheck
-	case StateStep4:
-		return StateStep5
-	case StateStep5:
-		return StateFinalizing
-	default:
-		return s
-	}
-}
-
-// Delay returns the delay before transitioning to the next state
-func (s LoadingState) Delay() time.Duration {
-	if delay, exists := stepTimings[s]; exists {
-		return delay
-	}
-	return 500 * time.Millisecond
-}
-
-// Model represents the loading page model
+// Model represents the loading page
 type Model struct {
-	// Dependencies
 	httpClient *client.Client
 	log        *zap.Logger
 
-	// UI Components
 	spinner  spinner.Model
 	progress progress.Model
 
-	// State
 	state      LoadingState
 	error      error
-	healthData *HealthResponse
-
-	// Retry logic
+	healthData *HealthCheckResult
 	retryCount int
 
-	// Dimensions
 	width  int
 	height int
 }
 
-// Custom messages
-type (
-	stepMsg struct {
-		state LoadingState
-	}
+// stepMsg represents a state transition
+type stepMsg struct {
+	state LoadingState
+}
 
-	healthCheckResultMsg struct {
-		success   bool
-		status    string
-		latency   string
-		timestamp string
-		error     error
-	}
-)
-
-// NewModel creates a new loading page model with logger
+// NewModel creates a new loading model
 func NewModel(httpClient *client.Client, log *zap.Logger) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -184,57 +91,40 @@ func NewModel(httpClient *client.Client, log *zap.Logger) Model {
 		log:        log,
 		spinner:    s,
 		progress:   p,
-		state:      StateInitializing,
+		state:      StateConnecting,
 	}
-}
-
-// GetPageType returns the page type
-func (m Model) GetPageType() messages.PageType {
-	return messages.LoadingPage
-}
-
-// OnEnter is called when the page becomes active
-func (m Model) OnEnter() tea.Cmd {
-	return tea.Batch(
-		m.spinner.Tick,
-		tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
-			return stepMsg{state: StateStep1}
-		}),
-	)
-}
-
-// OnExit is called when leaving the page
-func (m Model) OnExit() tea.Cmd {
-	m.log.Debug("Loading page exited")
-	return nil
 }
 
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
-	return m.OnEnter()
+	return tea.Batch(
+		m.spinner.Tick,
+		tea.Tick(1*time.Second, func(t time.Time) tea.Msg {
+			return stepMsg{state: StateHealthCheck}
+		}),
+	)
 }
 
-// performHealthCheck creates a command to check server health
+// performHealthCheck performs the health check
 func (m Model) performHealthCheck() tea.Cmd {
 	return func() tea.Msg {
-		m.log.Debug("Starting health check")
+		m.log.Debug("Performing health check")
 
 		ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
 		defer cancel()
 
 		start := time.Now()
-		latency := func() string { return time.Since(start).String() }
 		timestamp := time.Now().Format(time.RFC3339)
 
 		resp, err := m.httpClient.Get(ctx, "/health")
 		if err != nil {
-			m.log.Error("Health check request failed", zap.Error(err))
-			return healthCheckResultMsg{
-				success:   false,
-				status:    "error",
-				error:     err,
-				latency:   latency(),
-				timestamp: timestamp,
+			m.log.Error("Health check failed", zap.Error(err))
+			return HealthCheckResult{
+				Success:   false,
+				Status:    "error",
+				Error:     err,
+				Latency:   time.Since(start).String(),
+				Timestamp: timestamp,
 			}
 		}
 		defer resp.Body.Close()
@@ -242,120 +132,37 @@ func (m Model) performHealthCheck() tea.Cmd {
 		if resp.StatusCode != http.StatusOK {
 			err := fmt.Errorf("server returned status %d", resp.StatusCode)
 			m.log.Error("Health check failed", zap.Int("status", resp.StatusCode))
-			return healthCheckResultMsg{
-				success:   false,
-				status:    fmt.Sprintf("HTTP %d", resp.StatusCode),
-				error:     err,
-				latency:   latency(),
-				timestamp: timestamp,
+			return HealthCheckResult{
+				Success:   false,
+				Status:    fmt.Sprintf("HTTP %d", resp.StatusCode),
+				Error:     err,
+				Latency:   time.Since(start).String(),
+				Timestamp: timestamp,
 			}
 		}
 
 		var healthResp HealthResponse
 		if err := json.NewDecoder(resp.Body).Decode(&healthResp); err != nil {
 			m.log.Error("Failed to parse health response", zap.Error(err))
-			return healthCheckResultMsg{
-				success:   false,
-				status:    "parse_error",
-				error:     fmt.Errorf("failed to parse response: %w", err),
-				latency:   latency(),
-				timestamp: timestamp,
+			return HealthCheckResult{
+				Success:   false,
+				Status:    "parse_error",
+				Error:     fmt.Errorf("failed to parse response: %w", err),
+				Latency:   time.Since(start).String(),
+				Timestamp: timestamp,
 			}
 		}
 
-		return healthCheckResultMsg{
-			success:   true,
-			status:    healthResp.Status,
-			latency:   latency(),
-			timestamp: timestamp,
+		return HealthCheckResult{
+			Success:   true,
+			Status:    healthResp.Status,
+			Latency:   time.Since(start).String(),
+			Timestamp: timestamp,
 		}
 	}
 }
 
-// handleStepMessage handles step progression messages
-func (m *Model) handleStepMessage(msg stepMsg) []tea.Cmd {
-	var cmds []tea.Cmd
-
-	m.state = msg.state
-
-	// Update progress bar
-	if cmd := m.progress.SetPercent(m.state.Progress()); cmd != nil {
-		cmds = append(cmds, cmd)
-	}
-	cmds = append(cmds, m.spinner.Tick)
-
-	// Handle special states
-	switch m.state {
-	case StateHealthCheck:
-		cmds = append(cmds, m.performHealthCheck())
-	default:
-		// Schedule next step
-		nextState := m.state.NextState()
-		if nextState != m.state {
-			delay := m.state.Delay()
-			cmds = append(cmds, tea.Tick(delay, func(t time.Time) tea.Msg {
-				return stepMsg{state: nextState}
-			}))
-		}
-	}
-
-	return cmds
-}
-
-// handleHealthCheckResult handles health check results
-func (m *Model) handleHealthCheckResult(msg healthCheckResultMsg) []tea.Cmd {
-	var cmds []tea.Cmd
-
-	if msg.success {
-		m.healthData = &HealthResponse{
-			Status:    msg.status,
-			Timestamp: msg.timestamp,
-		}
-		// Continue to next step
-		cmds = append(cmds, tea.Tick(300*time.Millisecond, func(t time.Time) tea.Msg {
-			return stepMsg{state: StateStep4}
-		}))
-	} else {
-		m.log.Error("Health check failed", zap.Error(msg.error))
-		m.error = msg.error
-
-		if m.retryCount < maxRetries {
-			m.state = StateRetrying
-			m.retryCount++
-			m.log.Info("Scheduling retry",
-				zap.Int("attempt", m.retryCount),
-				zap.Int("maxRetries", maxRetries))
-
-			cmds = append(cmds,
-				m.progress.SetPercent(StateHealthCheck.Progress()),
-				tea.Tick(retryDelay, func(time.Time) tea.Msg {
-					return stepMsg{state: StateHealthCheck}
-				}),
-				m.spinner.Tick,
-			)
-		} else {
-			m.state = StateError
-			m.log.Error("Max retries exceeded")
-		}
-	}
-
-	return cmds
-}
-
-// resetForRetry resets the model state for a retry
-func (m *Model) resetForRetry() []tea.Cmd {
-	m.state = StateInitializing
-	m.retryCount = 0
-	return []tea.Cmd{
-		m.progress.SetPercent(0),
-		m.spinner.Tick,
-		tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
-			return stepMsg{state: StateStep1}
-		}),
-	}
-}
-
-// Update handles messages and updates the model
+// Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -364,22 +171,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.progress.Width = min(m.width-20, progressBarWidth)
-		m.log.Debug("Window size updated",
-			zap.Int("width", m.width),
-			zap.Int("height", m.height))
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c":
+		case "ctrl+c", "q":
 			return m, tea.Quit
-		case "q":
-			if m.state == StateError {
-				return m, tea.Quit
-			}
 		case "r":
 			if m.state == StateError {
-				m.log.Info("User requested retry")
-				cmds = append(cmds, m.resetForRetry()...)
+				m.log.Info("Retrying connection")
+				m.state = StateConnecting
+				m.error = nil
+				m.retryCount = 0
+				cmds = append(cmds, m.progress.SetPercent(0.3))
+				cmds = append(cmds, tea.Tick(1*time.Second, func(t time.Time) tea.Msg {
+					return stepMsg{state: StateHealthCheck}
+				}))
 			}
 		}
 
@@ -394,71 +200,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 	case stepMsg:
-		cmds = append(cmds, m.handleStepMessage(msg)...)
+		m.state = msg.state
+		switch m.state {
+		case StateHealthCheck:
+			cmds = append(cmds, m.progress.SetPercent(0.7))
+			cmds = append(cmds, m.performHealthCheck())
+		default:
+			panic("unhandled default case")
+		}
 
-	case healthCheckResultMsg:
-		cmds = append(cmds, m.handleHealthCheckResult(msg)...)
+	case HealthCheckResult:
+		if msg.Success {
+			m.healthData = &msg
+			m.error = nil
+			m.state = StateSuccess
+			cmds = append(cmds, m.progress.SetPercent(1.0))
+		} else {
+			m.error = msg.Error
+			if m.retryCount < maxRetries {
+				m.state = StateRetrying
+				m.retryCount++
+				cmds = append(cmds, tea.Tick(retryDelay, func(time.Time) tea.Msg {
+					return stepMsg{state: StateHealthCheck}
+				}))
+			} else {
+				m.state = StateError
+			}
+		}
 	}
 
 	return m, tea.Batch(cmds...)
-}
-
-// renderLogo returns the styled application logo
-func (m Model) renderLogo() string {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(styles.Primary)).
-		Bold(true).
-		Render(`
- _______  _______  _______ 
-|       ||  _    ||       |
-|    ___|| | |   ||  _____|
-|   | __ | | |   || |_____ 
-|   ||  || |_|   ||_____  |
-|   |_| ||       | _____| |
-|_______||_______||_______|
-`)
-}
-
-// renderTitle returns the styled application title
-func (m Model) renderTitle() string {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(styles.Text)).
-		Bold(true).
-		Render("g0s System Monitor")
-}
-
-// renderLoadingLine returns the loading line with spinner and text
-func (m Model) renderLoadingLine() string {
-	return lipgloss.JoinHorizontal(
-		lipgloss.Center,
-		m.spinner.View()+" ",
-		lipgloss.NewStyle().Bold(true).Render(m.state.String()),
-	)
-}
-
-// renderStatusMessage returns the status message based on current state
-func (m Model) renderStatusMessage() string {
-	switch m.state {
-	case StateError:
-		content := styles.ErrorStyle.Render("❌ " + m.state.String())
-		if m.error != nil {
-			content += "\n" + styles.ErrorStyle.Render(m.error.Error())
-		}
-		content += "\n\n" + lipgloss.NewStyle().
-			Foreground(lipgloss.Color(styles.TextMuted)).
-			Italic(true).
-			Render("Press 'r' to retry or 'q' to quit")
-		return content
-
-	case StateRetrying:
-		return styles.WarningStyle.Render(fmt.Sprintf("⚠️  Attempt %d/%d", m.retryCount, maxRetries))
-
-	default:
-		return lipgloss.NewStyle().
-			Foreground(lipgloss.Color(styles.TextMuted)).
-			Italic(true).
-			Render("Please wait...")
-	}
 }
 
 // View renders the loading page
@@ -469,23 +240,80 @@ func (m Model) View() string {
 
 	var content strings.Builder
 
-	// Build content
-	content.WriteString(m.renderLogo())
+	// Logo
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color(styles.Primary)).
+		Bold(true).
+		Render(`
+ _______  _______  _______ 
+|       ||  _    ||       |
+|    ___|| | |   ||  _____|
+|   | __ | | |   || |_____ 
+|   ||  || |_|   ||_____  |
+|   |_| ||       | _____| |
+|_______||_______||_______|
+`))
+
 	content.WriteString("\n\n")
-	content.WriteString(m.renderTitle())
+
+	// Title
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color(styles.Text)).
+		Bold(true).
+		Render("g0s System Monitor"))
+
 	content.WriteString("\n\n")
-	content.WriteString(m.renderLoadingLine())
+
+	// Status line
+	var statusText string
+	switch m.state {
+	case StateConnecting:
+		statusText = "Connecting to server..."
+	case StateHealthCheck:
+		statusText = "Checking server health..."
+	case StateSuccess:
+		statusText = "✅ Connected successfully!"
+	case StateError:
+		statusText = "❌ Connection failed"
+	case StateRetrying:
+		statusText = fmt.Sprintf("⚠️  Retrying... (attempt %d/%d)", m.retryCount, maxRetries)
+	}
+
+	content.WriteString(lipgloss.JoinHorizontal(
+		lipgloss.Center,
+		m.spinner.View()+" ",
+		lipgloss.NewStyle().Bold(true).Render(statusText),
+	))
+
 	content.WriteString("\n\n")
 	content.WriteString(m.progress.View())
 	content.WriteString("\n\n")
-	content.WriteString(m.renderStatusMessage())
 
-	// Center everything in the terminal
-	containerStyle := lipgloss.NewStyle().
+	// Error message or instructions
+	if m.state == StateError {
+		content.WriteString(styles.ErrorStyle.Render("Error: " + m.error.Error()))
+		content.WriteString("\n\n")
+		content.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color(styles.TextMuted)).
+			Italic(true).
+			Render("Press 'r' to retry or 'q' to quit"))
+	} else if m.state == StateSuccess {
+		content.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color(styles.TextMuted)).
+			Italic(true).
+			Render("Press any key to continue..."))
+	} else {
+		content.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color(styles.TextMuted)).
+			Italic(true).
+			Render("Please wait..."))
+	}
+
+	// Center everything
+	return lipgloss.NewStyle().
 		Align(lipgloss.Center).
 		AlignVertical(lipgloss.Center).
 		Width(m.width).
-		Height(m.height)
-
-	return containerStyle.Render(content.String())
+		Height(m.height).
+		Render(content.String())
 }
