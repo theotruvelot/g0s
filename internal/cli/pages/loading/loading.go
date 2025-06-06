@@ -202,11 +202,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stepMsg:
 		m.state = msg.state
 		switch m.state {
+		case StateConnecting:
+			cmds = append(cmds, m.progress.SetPercent(0.3))
 		case StateHealthCheck:
 			cmds = append(cmds, m.progress.SetPercent(0.7))
 			cmds = append(cmds, m.performHealthCheck())
-		default:
-			panic("unhandled default case")
+		case StateSuccess:
+			cmds = append(cmds, m.progress.SetPercent(1.0))
+		case StateError:
+			// Error state - no additional commands needed
+		case StateRetrying:
+			// Retrying state - no additional commands needed
 		}
 
 	case HealthCheckResult:
