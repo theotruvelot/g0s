@@ -10,7 +10,7 @@ import (
 
 func TestNew(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	handler := New(logger)
+	handler := New(logger, nil)
 
 	assert.NotNil(t, handler)
 	assert.Equal(t, logger, handler.logger)
@@ -28,7 +28,7 @@ func TestHandler_RegisterServices(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger := zaptest.NewLogger(t)
-			handler := New(logger)
+			handler := New(logger, nil)
 			server := grpc.NewServer()
 
 			// This should not panic
@@ -45,7 +45,7 @@ func TestHandler_RegisterServices(t *testing.T) {
 func TestHandler_WithLogger(t *testing.T) {
 	// Create a custom logger to verify it's being used
 	logger := zaptest.NewLogger(t)
-	handler := New(logger)
+	handler := New(logger, nil)
 
 	// Verify the logger is properly set
 	assert.Equal(t, logger, handler.logger)
@@ -61,7 +61,7 @@ func TestHandler_WithLogger(t *testing.T) {
 
 func TestHandler_MultipleRegistrations(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	handler := New(logger)
+	handler := New(logger, nil)
 	server := grpc.NewServer()
 
 	// Register services multiple times should not panic

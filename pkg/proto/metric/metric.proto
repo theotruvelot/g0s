@@ -1,0 +1,121 @@
+syntax = "proto3";
+
+package metric;
+
+option go_package = "github.com/theotruvelot/g0s/pkg/proto/metric";
+
+import "google/protobuf/timestamp.proto";
+
+// Service definition for metrics
+service MetricService {
+  // Stream metrics from agent to server
+  rpc StreamMetrics(stream MetricsPayload) returns (stream MetricsResponse) {}
+  
+  // Get metrics for CLI
+  rpc GetMetrics(MetricsRequest) returns (MetricsPayload) {}
+}
+
+// Request message for getting metrics
+message MetricsRequest {
+  string host_filter = 1;  // Optional host filter
+  string metric_type = 2;  // Optional metric type filter (cpu, ram, disk, etc)
+}
+
+// Response message for streaming metrics
+message MetricsResponse {
+  string status = 1;
+  string message = 2;
+}
+
+// Main metrics payload
+message MetricsPayload {
+  HostMetrics host = 1;
+  repeated CPUMetrics cpu = 2;
+  RAMMetrics ram = 3;
+  repeated DiskMetrics disk = 4;
+  repeated NetworkMetrics network = 5;
+  repeated DockerMetrics docker = 6;
+  google.protobuf.Timestamp timestamp = 7;
+}
+
+// Host metrics
+message HostMetrics {
+  string hostname = 1;
+  uint64 uptime = 2;
+  uint64 procs = 3;
+  string os = 4;
+  string platform = 5;
+  string platform_family = 6;
+  string platform_version = 7;
+  string virtualization_system = 8;
+  string virtualization_role = 9;
+  string kernel_version = 10;
+}
+
+// CPU metrics
+message CPUMetrics {
+  string model = 1;
+  int32 cores = 2;
+  int32 threads = 3;
+  double frequency_mhz = 4;
+  double usage_percent = 5;
+  double user_time = 6;
+  double system_time = 7;
+  double idle_time = 8;
+  int32 core_id = 9;
+  bool is_total = 10;
+}
+
+// RAM metrics
+message RAMMetrics {
+  uint64 total_octets = 1;
+  uint64 used_octets = 2;
+  uint64 free_octets = 3;
+  double used_percent = 4;
+  uint64 available_octets = 5;
+  uint64 swap_total_octets = 6;
+  uint64 swap_used_octets = 7;
+  double swap_used_percent = 8;
+}
+
+// Disk metrics
+message DiskMetrics {
+  string path = 1;
+  string device = 2;
+  string fstype = 3;
+  uint64 total = 4;
+  uint64 used = 5;
+  uint64 free = 6;
+  double used_percent = 7;
+  uint64 read_count = 8;
+  uint64 write_count = 9;
+  uint64 read_octets = 10;
+  uint64 write_octets = 11;
+}
+
+// Network metrics
+message NetworkMetrics {
+  string interface_name = 1;
+  uint64 bytes_sent = 2;
+  uint64 bytes_recv = 3;
+  uint64 packets_sent = 4;
+  uint64 packets_recv = 5;
+  uint64 err_in = 6;
+  uint64 err_out = 7;
+}
+
+// Docker metrics
+message DockerMetrics {
+  string container_id = 1;
+  string container_name = 2;
+  string image = 3;
+  string image_id = 4;
+  string image_name = 5;
+  string image_tag = 6;
+  string image_digest = 7;
+  string image_size = 8;
+  CPUMetrics cpu_metrics = 9;
+  RAMMetrics ram_metrics = 10;
+  DiskMetrics disk_metrics = 11;
+  NetworkMetrics network_metrics = 12;
+}

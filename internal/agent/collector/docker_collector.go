@@ -4,22 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/theotruvelot/g0s/internal/agent/model"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
-	"github.com/theotruvelot/g0s/internal/agent/model/metric"
 	"go.uber.org/zap"
 )
 
-// DockerCollector collects Docker container metrics
 type DockerCollector struct {
 	log    *zap.Logger
 	client *client.Client
 }
 
-// NewDockerCollector creates a new DockerCollector instance
 func NewDockerCollector(log *zap.Logger) (*DockerCollector, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
@@ -32,94 +32,212 @@ func NewDockerCollector(log *zap.Logger) (*DockerCollector, error) {
 	}, nil
 }
 
-// Collect gathers metrics from all running Docker containers
-func (d *DockerCollector) Collect() ([]metric.DockerMetrics, error) {
-	ctx := context.Background()
+func (d *DockerCollector) Collect() ([]model.DockerMetrics, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	containers, err := d.client.ContainerList(ctx, container.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
 
+	if len(containers) == 0 {
+		return []model.DockerMetrics{}, nil
+	}
+
+	numWorkers := d.calculateOptimalWorkers(len(containers))
+
+	d.log.Debug("Starting container metrics collection",
+		zap.Int("containers", len(containers)),
+		zap.Int("workers", numWorkers))
+
+	jobs := make(chan types.Container, len(containers))
+	results := make(chan containerResult, len(containers))
+
 	var wg sync.WaitGroup
-	metricsChan := make(chan metric.DockerMetrics, len(containers))
-	errorsChan := make(chan error, len(containers))
-
-	// Launch a goroutine for each container
-	for _, container := range containers {
+	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		c := container
-		go func() {
-			defer wg.Done()
-
-			stats, err := d.collectContainerStats(ctx, c.ID)
-			if err != nil {
-				d.log.Error("Failed to collect stats for container",
-					zap.String("containerID", c.ID),
-					zap.Error(err))
-				errorsChan <- err
-				return
-			}
-
-			// Extract image details
-			imageName, imageTag := parseImageName(c.Image)
-
-			containerMetrics := metric.DockerMetrics{
-				ContainerID:   c.ID,
-				ContainerName: strings.TrimPrefix(c.Names[0], "/"),
-				Image:         c.Image,
-				ImageID:       c.ImageID,
-				ImageName:     imageName,
-				ImageTag:      imageTag,
-				CPUMetrics: metric.CPUMetrics{
-					UsagePercent: calculateCPUPercentage(stats),
-					UserTime:     float64(stats.CPUStats.CPUUsage.UsageInUsermode),
-					SystemTime:   float64(stats.CPUStats.CPUUsage.UsageInKernelmode),
-					Cores:        int(stats.CPUStats.OnlineCPUs),
-					Threads:      int(stats.CPUStats.CPUUsage.TotalUsage),
-				},
-				RAMMetrics: metric.RamMetrics{
-					TotalOctets:     stats.MemoryStats.Limit,
-					UsedOctets:      stats.MemoryStats.Usage,
-					AvailableOctets: stats.MemoryStats.Limit - stats.MemoryStats.Usage,
-					UsedPercent:     float64(stats.MemoryStats.Usage) / float64(stats.MemoryStats.Limit) * 100,
-				},
-				DiskMetrics:    collectDiskMetrics(stats),
-				NetworkMetrics: collectNetworkMetrics(stats),
-			}
-
-			metricsChan <- containerMetrics
-		}()
+		go d.worker(ctx, jobs, results, &wg)
 	}
 
-	// Wait for all goroutines to complete
-	wg.Wait()
-	close(metricsChan)
-	close(errorsChan)
+	for _, container := range containers {
+		jobs <- container
+	}
+	close(jobs)
 
-	// Collect results
-	var metrics []metric.DockerMetrics
-	for metric := range metricsChan {
-		metrics = append(metrics, metric)
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	metrics := make([]model.DockerMetrics, 0, len(containers))
+	errorCount := 0
+
+	for result := range results {
+		if result.err != nil {
+			errorCount++
+			d.log.Debug("Failed to collect container metrics",
+				zap.String("containerID", result.containerID),
+				zap.Error(result.err))
+		} else {
+			metrics = append(metrics, result.metrics)
+		}
 	}
 
-	// Check for errors
-	var errs []error
-	for err := range errorsChan {
-		errs = append(errs, err)
-	}
-
-	if len(errs) > 0 {
-		return metrics, fmt.Errorf("errors collecting container stats: %v", errs)
+	if errorCount > 0 {
+		d.log.Warn("Some container metrics collection failed",
+			zap.Int("errors", errorCount),
+			zap.Int("successful", len(metrics)))
 	}
 
 	return metrics, nil
 }
 
-// collectContainerStats gets stats for a specific container
-func (d *DockerCollector) collectContainerStats(ctx context.Context, containerID string) (*container.StatsResponse, error) {
-	d.log.Debug("Collecting stats for container", zap.String("containerID", containerID))
+func (d *DockerCollector) calculateOptimalWorkers(containerCount int) int {
+	const (
+		minWorkers          = 1
+		maxWorkers          = 8
+		containersPerWorker = 3
+	)
 
+	if containerCount <= 0 {
+		return minWorkers
+	}
+
+	optimalWorkers := (containerCount + containersPerWorker - 1) / containersPerWorker
+
+	if optimalWorkers > maxWorkers {
+		return maxWorkers
+	}
+
+	if optimalWorkers < minWorkers {
+		return minWorkers
+	}
+
+	return optimalWorkers
+}
+
+type containerResult struct {
+	metrics     model.DockerMetrics
+	containerID string
+	err         error
+}
+
+func (d *DockerCollector) worker(ctx context.Context, jobs <-chan types.Container, results chan<- containerResult, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	for container := range jobs {
+		if ctx.Err() != nil {
+			results <- containerResult{
+				containerID: container.ID[:12],
+				err:         ctx.Err(),
+			}
+			continue
+		}
+
+		metrics, err := d.processContainer(ctx, container)
+		results <- containerResult{
+			metrics:     metrics,
+			containerID: container.ID[:12],
+			err:         err,
+		}
+	}
+}
+
+func (d *DockerCollector) processContainer(ctx context.Context, c types.Container) (model.DockerMetrics, error) {
+	stats, err := d.collectContainerStats(ctx, c.ID)
+	if err != nil {
+		return model.DockerMetrics{}, err
+	}
+
+	imageName, imageTag := parseImageName(c.Image)
+
+	return model.DockerMetrics{
+		ContainerID:    c.ID,
+		ContainerName:  strings.TrimPrefix(c.Names[0], "/"),
+		Image:          c.Image,
+		ImageID:        c.ImageID,
+		ImageName:      imageName,
+		ImageTag:       imageTag,
+		CPUMetrics:     d.buildCPUMetrics(stats),
+		RAMMetrics:     d.buildRAMMetrics(stats),
+		DiskMetrics:    d.buildDiskMetrics(stats),
+		NetworkMetrics: d.buildNetworkMetrics(stats),
+	}, nil
+}
+
+func (d *DockerCollector) buildCPUMetrics(stats *container.StatsResponse) model.CPUMetrics {
+	return model.CPUMetrics{
+		UsagePercent: calculateCPUPercentage(stats),
+		UserTime:     float64(stats.CPUStats.CPUUsage.UsageInUsermode),
+		SystemTime:   float64(stats.CPUStats.CPUUsage.UsageInKernelmode),
+		Cores:        int(stats.CPUStats.OnlineCPUs),
+		Threads:      int(stats.CPUStats.CPUUsage.TotalUsage),
+	}
+}
+
+func (d *DockerCollector) buildRAMMetrics(stats *container.StatsResponse) model.RamMetrics {
+	usage := stats.MemoryStats.Usage
+	limit := stats.MemoryStats.Limit
+
+	return model.RamMetrics{
+		TotalOctets:     limit,
+		UsedOctets:      usage,
+		AvailableOctets: limit - usage,
+		UsedPercent:     calculateMemoryPercentage(usage, limit),
+	}
+}
+
+func (d *DockerCollector) buildDiskMetrics(stats *container.StatsResponse) model.DiskMetrics {
+	var readBytes, writeBytes, readOps, writeOps uint64
+
+	for _, blkio := range stats.BlkioStats.IoServiceBytesRecursive {
+		if blkio.Op == "Read" {
+			readBytes += blkio.Value
+		} else if blkio.Op == "Write" {
+			writeBytes += blkio.Value
+		}
+	}
+
+	for _, blkio := range stats.BlkioStats.IoServicedRecursive {
+		if blkio.Op == "Read" {
+			readOps += blkio.Value
+		} else if blkio.Op == "Write" {
+			writeOps += blkio.Value
+		}
+	}
+
+	return model.DiskMetrics{
+		Path:        "/",
+		ReadCount:   readOps,
+		WriteCount:  writeOps,
+		ReadOctets:  readBytes,
+		WriteOctets: writeBytes,
+	}
+}
+
+func (d *DockerCollector) buildNetworkMetrics(stats *container.StatsResponse) model.NetworkMetrics {
+	var metrics model.NetworkMetrics
+
+	for _, network := range stats.Networks {
+		metrics.BytesRecv += network.RxBytes
+		metrics.BytesSent += network.TxBytes
+		metrics.PacketsRecv += network.RxPackets
+		metrics.PacketsSent += network.TxPackets
+		metrics.ErrIn += network.RxErrors
+		metrics.ErrOut += network.TxErrors
+	}
+
+	return metrics
+}
+
+func (d *DockerCollector) Close() {
+	if d.client != nil {
+		d.client.Close()
+	}
+}
+
+func (d *DockerCollector) collectContainerStats(ctx context.Context, containerID string) (*container.StatsResponse, error) {
 	stats, err := d.client.ContainerStats(ctx, containerID, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get container stats: %w", err)
@@ -130,12 +248,6 @@ func (d *DockerCollector) collectContainerStats(ctx context.Context, containerID
 	if err := json.NewDecoder(stats.Body).Decode(&statsJSON); err != nil {
 		return nil, fmt.Errorf("failed to decode stats JSON: %w", err)
 	}
-
-	d.log.Debug("Raw Docker stats",
-		zap.String("containerID", containerID),
-		zap.Any("cpuStats", statsJSON.CPUStats),
-		zap.Any("memoryStats", statsJSON.MemoryStats),
-		zap.Any("networks", statsJSON.Networks))
 
 	return &statsJSON, nil
 }
@@ -150,88 +262,40 @@ func calculateCPUPercentage(stats *container.StatsResponse) float64 {
 
 	numCPUs := float64(stats.CPUStats.OnlineCPUs)
 	if numCPUs == 0 {
-		numCPUs = float64(len(stats.CPUStats.CPUUsage.PercpuUsage))
-		if numCPUs == 0 {
+		if len(stats.CPUStats.CPUUsage.PercpuUsage) > 0 {
+			numCPUs = float64(len(stats.CPUStats.CPUUsage.PercpuUsage))
+		} else {
 			numCPUs = 1.0
 		}
 	}
 
 	cpuPercent := (cpuDelta / systemDelta) * numCPUs * 100.0
+
 	if cpuPercent > 100.0 {
-		cpuPercent = 100.0
+		return 100.0
 	} else if cpuPercent < 0.0 {
-		cpuPercent = 0.0
+		return 0.0
 	}
 
 	return cpuPercent
 }
 
-func collectDiskMetrics(stats *container.StatsResponse) metric.DiskMetrics {
-	var readOctets, writeOctets uint64
-	var readCount, writeCount uint64
-
-	for _, blkio := range stats.BlkioStats.IoServiceBytesRecursive {
-		switch blkio.Op {
-		case "Read":
-			readOctets += blkio.Value
-		case "Write":
-			writeOctets += blkio.Value
-		}
+func calculateMemoryPercentage(used, limit uint64) float64 {
+	if limit == 0 {
+		return 0.0
 	}
 
-	for _, blkio := range stats.BlkioStats.IoServicedRecursive {
-		switch blkio.Op {
-		case "Read":
-			readCount += blkio.Value
-		case "Write":
-			writeCount += blkio.Value
-		}
+	percent := float64(used) / float64(limit) * 100.0
+	if percent > 100.0 {
+		return 100.0
 	}
 
-	return metric.DiskMetrics{
-		Path:        "/", // Container root filesystem
-		Device:      "",  // Device info not available from container stats
-		Fstype:      "",  // Filesystem type not available from container stats
-		TotalOctets: 0,   // Total space not available from container stats
-		UsedOctets:  0,   // Used space not available from container stats
-		FreeOctets:  0,   // Free space not available from container stats
-		UsedPercent: 0,   // Usage percent not available from container stats
-		ReadCount:   readCount,
-		WriteCount:  writeCount,
-		ReadOctets:  readOctets,
-		WriteOctets: writeOctets,
-	}
+	return percent
 }
 
-func collectNetworkMetrics(stats *container.StatsResponse) metric.NetworkMetrics {
-	var rx, tx uint64
-	var rxPackets, txPackets uint64
-	var rxErrors, txErrors uint64
-
-	for _, network := range stats.Networks {
-		rx += network.RxBytes
-		tx += network.TxBytes
-		rxPackets += network.RxPackets
-		txPackets += network.TxPackets
-		rxErrors += network.RxErrors
-		txErrors += network.TxErrors
-	}
-
-	return metric.NetworkMetrics{
-		BytesRecv:   rx,
-		BytesSent:   tx,
-		PacketsRecv: rxPackets,
-		PacketsSent: txPackets,
-		ErrIn:       rxErrors,
-		ErrOut:      txErrors,
-	}
-}
-
-// parseImageName extracts image name and tag from a Docker image string
 func parseImageName(image string) (string, string) {
-	parts := strings.Split(image, ":")
-	if len(parts) > 1 {
-		return parts[0], parts[1]
+	if idx := strings.LastIndex(image, ":"); idx != -1 {
+		return image[:idx], image[idx+1:]
 	}
-	return parts[0], "latest" // tag par défaut si pas spécifié
+	return image, "latest"
 }

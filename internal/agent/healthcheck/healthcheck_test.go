@@ -2,171 +2,146 @@ package healthcheck
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
+	"net"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/theotruvelot/g0s/pkg/logger"
+	health "github.com/theotruvelot/g0s/pkg/proto/health"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
 )
 
-func TestNew(t *testing.T) {
-	cfg := Config{
-		ServerURL: "http://example.com",
-		Token:     "test-token",
-		Interval:  time.Second,
+const bufSize = 1024 * 1024
+
+type mockHealthServer struct {
+	health.UnimplementedHealthServiceServer
+	serving bool
+}
+
+func (m *mockHealthServer) Check(ctx context.Context, req *health.HealthCheckRequest) (*health.HealthCheckResponse, error) {
+	if m.serving {
+		return &health.HealthCheckResponse{
+			Status: health.HealthCheckResponse_SERVING,
+		}, nil
+	}
+	return &health.HealthCheckResponse{
+		Status: health.HealthCheckResponse_NOT_SERVING,
+	}, nil
+}
+
+func (m *mockHealthServer) Watch(req *health.HealthCheckRequest, stream health.HealthService_WatchServer) error {
+	for {
+		select {
+		case <-stream.Context().Done():
+			return status.Error(codes.Canceled, "Stream canceled")
+		default:
+			if err := stream.Send(&health.HealthCheckResponse{
+				Status: health.HealthCheckResponse_SERVING,
+			}); err != nil {
+				return err
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+}
+
+func setupTest(t *testing.T) (*grpc.ClientConn, *mockHealthServer) {
+	lis := bufconn.Listen(bufSize)
+	s := grpc.NewServer()
+	mockServer := &mockHealthServer{serving: true}
+	health.RegisterHealthServiceServer(s, mockServer)
+
+	go func() {
+		if err := s.Serve(lis); err != nil {
+			t.Errorf("Failed to serve: %v", err)
+		}
+	}()
+
+	dialer := func(context.Context, string) (net.Conn, error) {
+		return lis.Dial()
 	}
 
-	service := New(cfg)
-	assert.NotNil(t, service)
-	assert.Equal(t, cfg.Interval, service.interval)
-	assert.False(t, service.lastCheck)
+	ctx := context.Background()
+	conn, err := grpc.DialContext(ctx, "bufnet",
+		grpc.WithContextDialer(dialer),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("Failed to dial bufnet: %v", err)
+	}
+
+	return conn, mockServer
 }
 
 func TestHealthCheck(t *testing.T) {
-	tests := []struct {
-		name           string
-		serverResponse int
-		expectHealthy  bool
-	}{
-		{
-			name:           "healthy server",
-			serverResponse: http.StatusOK,
-			expectHealthy:  true,
-		},
-		{
-			name:           "unhealthy server",
-			serverResponse: http.StatusServiceUnavailable,
-			expectHealthy:  false,
-		},
-		{
-			name:           "server error",
-			serverResponse: http.StatusInternalServerError,
-			expectHealthy:  false,
-		},
-	}
+	conn, mockServer := setupTest(t)
+	defer conn.Close()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				assert.Equal(t, _healthEndpoint, r.URL.Path)
-				w.WriteHeader(tt.serverResponse)
-			}))
-			defer server.Close()
-
-			service := New(Config{
-				ServerURL: server.URL,
-				Token:     "test-token",
-				Interval:  time.Second,
-			})
-
-			ctx := context.Background()
-			service.check(ctx)
-
-			assert.Equal(t, tt.expectHealthy, service.IsHealthy())
-		})
-	}
-}
-
-func TestHealthCheckService(t *testing.T) {
-	// Create a test server that alternates between healthy and unhealthy
-	healthy := true
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if healthy {
-			w.WriteHeader(http.StatusOK)
-		} else {
-			w.WriteHeader(http.StatusServiceUnavailable)
-		}
-		healthy = !healthy
-	}))
-	defer server.Close()
-
-	service := New(Config{
-		ServerURL: server.URL,
-		Token:     "test-token",
-		Interval:  100 * time.Millisecond,
+	logger.InitLogger(logger.Config{
+		Level:     "debug",
+		Format:    "console",
+		Component: "test",
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	service := New(conn, logger.GetLogger())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// Start the service in a goroutine
-	go service.Start(ctx)
+	// Test initial health check
+	err := service.Start(ctx, 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Failed to start health check: %v", err)
+	}
 
-	// Wait for initial check
-	time.Sleep(50 * time.Millisecond)
-	firstCheck := service.IsHealthy()
+	// Wait for health check to complete
+	time.Sleep(200 * time.Millisecond)
 
-	// Wait for second check
-	time.Sleep(100 * time.Millisecond)
-	secondCheck := service.IsHealthy()
+	if !service.IsHealthy() {
+		t.Error("Expected service to be healthy")
+	}
 
-	assert.NotEqual(t, firstCheck, secondCheck, "Health status should alternate")
+	// Test unhealthy state
+	mockServer.serving = false
+	time.Sleep(200 * time.Millisecond)
+
+	if service.IsHealthy() {
+		t.Error("Expected service to be unhealthy")
+	}
 }
 
-func TestHealthCheckServiceContextCancellation(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
+func TestHealthCheckCancellation(t *testing.T) {
+	conn, _ := setupTest(t)
+	defer conn.Close()
 
-	service := New(Config{
-		ServerURL: server.URL,
-		Token:     "test-token",
-		Interval:  time.Second,
+	logger.InitLogger(logger.Config{
+		Level:     "debug",
+		Format:    "console",
+		Component: "test",
 	})
+
+	service := New(conn, logger.GetLogger())
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	done := make(chan struct{})
-	go func() {
-		service.Start(ctx)
-		close(done)
-	}()
+	err := service.Start(ctx, 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Failed to start health check: %v", err)
+	}
 
-	// Wait for initial check
-	time.Sleep(50 * time.Millisecond)
+	// Wait for health check to establish
+	time.Sleep(200 * time.Millisecond)
 
 	// Cancel context
 	cancel()
 
-	// Wait for service to stop
-	select {
-	case <-done:
-		// Service stopped as expected
-	case <-time.After(time.Second):
-		t.Fatal("Service did not stop after context cancellation")
+	// Wait for cancellation to propagate
+	time.Sleep(200 * time.Millisecond)
+
+	if service.IsHealthy() {
+		t.Error("Expected service to be unhealthy after cancellation")
 	}
-}
-
-func TestHealthCheckWithServerError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
-
-	service := New(Config{
-		ServerURL: server.URL,
-		Token:     "test-token",
-		Interval:  time.Second,
-	})
-
-	ctx := context.Background()
-	service.check(ctx)
-
-	assert.False(t, service.IsHealthy(), "Service should be unhealthy when server returns error")
-}
-
-func TestHealthCheckWithServerDown(t *testing.T) {
-	// Use a non-existent server URL
-	service := New(Config{
-		ServerURL: "http://localhost:12345",
-		Token:     "test-token",
-		Interval:  time.Second,
-	})
-
-	ctx := context.Background()
-	service.check(ctx)
-
-	assert.False(t, service.IsHealthy(), "Service should be unhealthy when server is down")
 }

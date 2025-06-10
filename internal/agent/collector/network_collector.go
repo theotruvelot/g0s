@@ -2,24 +2,21 @@ package collector
 
 import (
 	"github.com/shirou/gopsutil/v4/net"
-	"github.com/theotruvelot/g0s/internal/agent/model/metric"
+	"github.com/theotruvelot/g0s/internal/agent/model"
 	"go.uber.org/zap"
 )
 
-// NetworkCollector collects network interface statistics and metrics.
 type NetworkCollector struct {
 	log *zap.Logger
 }
 
-// NewNetworkCollector creates a new NetworkCollector instance.
 func NewNetworkCollector(log *zap.Logger) *NetworkCollector {
 	return &NetworkCollector{
 		log: log,
 	}
 }
 
-// Collect gathers network interface statistics including bytes and packets transferred.
-func (c *NetworkCollector) Collect() ([]metric.NetworkMetrics, error) {
+func (c *NetworkCollector) Collect() ([]model.NetworkMetrics, error) {
 	netStats, err := net.IOCounters(true)
 	if err != nil {
 		c.log.Error("Failed to collect network interface statistics", zap.Error(err))
@@ -29,12 +26,11 @@ func (c *NetworkCollector) Collect() ([]metric.NetworkMetrics, error) {
 	return c.buildNetworkMetrics(netStats), nil
 }
 
-// buildNetworkMetrics constructs network metrics from collected data.
-func (c *NetworkCollector) buildNetworkMetrics(netStats []net.IOCountersStat) []metric.NetworkMetrics {
-	var metrics []metric.NetworkMetrics
+func (c *NetworkCollector) buildNetworkMetrics(netStats []net.IOCountersStat) []model.NetworkMetrics {
+	metrics := make([]model.NetworkMetrics, 0, len(netStats))
 
 	for _, iface := range netStats {
-		metrics = append(metrics, metric.NetworkMetrics{
+		metrics = append(metrics, model.NetworkMetrics{
 			InterfaceName: iface.Name,
 			BytesSent:     iface.BytesSent,
 			BytesRecv:     iface.BytesRecv,

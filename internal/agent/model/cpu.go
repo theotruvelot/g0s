@@ -1,4 +1,4 @@
-package metric
+package model
 
 type CPUMetrics struct {
 	Model        string  `json:"model"`
@@ -9,4 +9,6 @@ type CPUMetrics struct {
 	UserTime     float64 `json:"user_time"`
 	SystemTime   float64 `json:"system_time"`
 	IdleTime     float64 `json:"idle_time"`
+	CoreID       int     `json:"core_id"`
+	IsTotal      bool    `json:"is_total"`
 }
