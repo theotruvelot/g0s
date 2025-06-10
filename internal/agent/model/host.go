@@ -1,4 +1,4 @@
-package metric
+package model
 
 type HostMetrics struct {
 	Hostname             string `json:"hostname"`

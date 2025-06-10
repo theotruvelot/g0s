@@ -15,18 +15,20 @@ import (
 )
 
 const (
-	_defaultHTTPAddr  = ":8080"
-	_defaultGRPCAddr  = ":9090"
-	_defaultLogLevel  = "info"
-	_defaultLogFormat = "json"
-	_shutdownTimeout  = 30 * time.Second
+	_defaultHTTPAddr   = ":8080"
+	_defaultGRPCAddr   = ":9090"
+	_defaultLogLevel   = "info"
+	_defaultLogFormat  = "json"
+	_defaultVMEndpoint = "http://localhost:8428"
+	_shutdownTimeout   = 5 * time.Second
 )
 
 var (
-	httpAddr  string
-	grpcAddr  string
-	logLevel  string
-	logFormat string
+	httpAddr   string
+	grpcAddr   string
+	logLevel   string
+	logFormat  string
+	vmEndpoint string
 )
 
 type serverError struct {
@@ -53,6 +55,7 @@ func main() {
 	rootCmd.Flags().StringVar(&grpcAddr, "grpc-addr", _defaultGRPCAddr, "gRPC server address")
 	rootCmd.Flags().StringVar(&logLevel, "log-level", _defaultLogLevel, "Log level: debug, info, warn, error")
 	rootCmd.Flags().StringVar(&logFormat, "log-format", _defaultLogFormat, "Log format: json or console")
+	rootCmd.Flags().StringVar(&vmEndpoint, "vm-endpoint", _defaultVMEndpoint, "VictoriaMetrics endpoint")
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -72,10 +75,10 @@ func runServer(_ *cobra.Command, _ []string) error {
 	defer cancel()
 
 	cfg := server.Config{
-		HTTPAddr:  httpAddr,
-		GRPCAddr:  grpcAddr,
-		LogLevel:  logLevel,
-		LogFormat: logFormat,
+		GRPCAddr:   grpcAddr,
+		LogLevel:   logLevel,
+		LogFormat:  logFormat,
+		VMEndpoint: vmEndpoint,
 	}
 
 	return runServerWithConfig(ctx, cfg)
@@ -87,7 +90,6 @@ func runServerWithConfig(ctx context.Context, cfg server.Config) error {
 	defer signal.Stop(signals)
 
 	logger.Info("Starting g0s-server",
-		zap.String("http_addr", cfg.HTTPAddr),
 		zap.String("grpc_addr", cfg.GRPCAddr),
 		zap.String("log_level", cfg.LogLevel),
 		zap.String("log_format", cfg.LogFormat))
@@ -102,7 +104,6 @@ func runServerWithConfig(ctx context.Context, cfg server.Config) error {
 	}
 
 	logger.Info("Server started successfully",
-		zap.String("http_addr", cfg.HTTPAddr),
 		zap.String("grpc_addr", cfg.GRPCAddr))
 
 	for {
@@ -118,6 +119,8 @@ func runServerWithConfig(ctx context.Context, cfg server.Config) error {
 
 func shutdownServer(srv *server.Server) error {
 	logger.Info("Initiating graceful shutdown", zap.Duration("timeout", _shutdownTimeout))
+
+	srv.NotifyShutdown()
 
 	ctx, cancel := context.WithTimeout(context.Background(), _shutdownTimeout)
 	defer cancel()

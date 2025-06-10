@@ -1,4 +1,4 @@
-package metric
+package model
 
 type NetworkMetrics struct {
 	InterfaceName string `json:"interface_name"`

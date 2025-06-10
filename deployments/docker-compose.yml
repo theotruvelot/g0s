@@ -1,0 +1,31 @@
+services:
+  # VictoriaMetrics server - stores metrics and handles queries
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.118.0
+    ports:
+      - 8428:8428 
+    volumes:
+      - vmdata:/storage
+    command:
+      - "--storageDataPath=/storage"
+      - "--httpListenAddr=:8428"
+    restart: always
+
+  # Grafana - visualization
+  grafana:
+    image: grafana/grafana:11.5.0
+    depends_on:
+      - "victoriametrics"
+    ports:
+      - 3000:3000
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: always
+
+volumes:
+  vmdata: {}
+  grafanadata: {} 

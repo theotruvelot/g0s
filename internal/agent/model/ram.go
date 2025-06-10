@@ -1,4 +1,4 @@
-package metric
+package model
 
 type RamMetrics struct {
 	TotalOctets     uint64  `json:"total_octets"`

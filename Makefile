@@ -16,19 +16,16 @@ build-cli:
 	@echo "CLI built successfully: bin/cli"
 
 run-agent:
-	@if [ -z "$(SERVER)" ]; then echo "Error: SERVER is required. Use: make run-agent SERVER=<url> TOKEN=<token>"; exit 1; fi
 	@if [ -z "$(TOKEN)" ]; then echo "Error: TOKEN is required. Use: make run-agent SERVER=<url> TOKEN=<token>"; exit 1; fi
-	@go run cmd/agent/main.go --server $(SERVER) --token $(TOKEN) $(if $(INTERVAL),--interval $(INTERVAL),) $(if $(LOG_FORMAT),--log-format $(LOG_FORMAT),) $(if $(LOG_LEVEL),--log-level $(LOG_LEVEL),) $(if $(HEALTH_INTERVAL),--health-check-interval $(HEALTH_INTERVAL),)
+	@go run cmd/agent/main.go  --grpc-addr $(GRPC_ADDR) --token $(TOKEN) $(if $(INTERVAL),--interval $(INTERVAL),) $(if $(LOG_FORMAT),--log-format $(LOG_FORMAT),) $(if $(LOG_LEVEL),--log-level $(LOG_LEVEL),) $(if $(HEALTH_INTERVAL),--health-check-interval $(HEALTH_INTERVAL),)
 
 run-agent-bin:
-	@if [ -z "$(SERVER)" ]; then echo "Error: SERVER is required. Use: make run-agent-bin SERVER=<url> TOKEN=<token>"; exit 1; fi
 	@if [ -z "$(TOKEN)" ]; then echo "Error: TOKEN is required. Use: make run-agent-bin SERVER=<url> TOKEN=<token>"; exit 1; fi
-	@bin/agent --server $(SERVER) --token $(TOKEN) $(if $(INTERVAL),--interval $(INTERVAL),) $(if $(LOG_FORMAT),--log-format $(LOG_FORMAT),) $(if $(LOG_LEVEL),--log-level $(LOG_LEVEL),) $(if $(HEALTH_INTERVAL),--health-check-interval $(HEALTH_INTERVAL),)
+	@bin/agent --token $(TOKEN) --grpc-addr $(GRPC_ADDR) $(if $(INTERVAL),--interval $(INTERVAL),) $(if $(LOG_FORMAT),--log-format $(LOG_FORMAT),) $(if $(LOG_LEVEL),--log-level $(LOG_LEVEL),) $(if $(HEALTH_INTERVAL),--health-check-interval $(HEALTH_INTERVAL),)
 
 run-agent-dev:
-	@if [ -z "$(SERVER)" ]; then echo "Error: SERVER is required. Use: make run-agent-dev SERVER=<url> TOKEN=<token>"; exit 1; fi
 	@if [ -z "$(TOKEN)" ]; then echo "Error: TOKEN is required. Use: make run-agent-dev SERVER=<url> TOKEN=<token>"; exit 1; fi
-	@go run cmd/agent/main.go --server $(SERVER) --token $(TOKEN) --log-format console --log-level debug $(if $(INTERVAL),--interval $(INTERVAL),) $(if $(HEALTH_INTERVAL),--health-check-interval $(HEALTH_INTERVAL),)
+	@go run cmd/agent/main.go --token $(TOKEN) --grpc-addr $(GRPC_ADDR) --log-format console --log-level debug $(if $(INTERVAL),--interval $(INTERVAL),) $(if $(HEALTH_INTERVAL),--health-check-interval $(HEALTH_INTERVAL),)
 
 run-server:
 	@go run cmd/server/main.go $(if $(HTTP_ADDR),--http-addr $(HTTP_ADDR),) $(if $(GRPC_ADDR),--grpc-addr $(GRPC_ADDR),) $(if $(LOG_LEVEL),--log-level $(LOG_LEVEL),) $(if $(LOG_FORMAT),--log-format $(LOG_FORMAT),)

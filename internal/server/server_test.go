@@ -21,7 +21,6 @@ func TestNew(t *testing.T) {
 		{
 			name: "default configuration",
 			config: Config{
-				HTTPAddr:  ":8080",
 				GRPCAddr:  ":9090",
 				LogLevel:  "info",
 				LogFormat: "json",
@@ -30,7 +29,6 @@ func TestNew(t *testing.T) {
 		{
 			name: "custom configuration",
 			config: Config{
-				HTTPAddr:  ":8081",
 				GRPCAddr:  ":9091",
 				LogLevel:  "debug",
 				LogFormat: "console",
@@ -47,8 +45,7 @@ func TestNew(t *testing.T) {
 			assert.NotNil(t, server)
 			assert.Equal(t, tt.config, server.cfg)
 			assert.Equal(t, logger, server.logger)
-			assert.NotNil(t, server.httpHandler)
-			assert.NotNil(t, server.grpcHandler)
+			assert.NotNil(t, server.handler)
 		})
 	}
 }
@@ -59,7 +56,6 @@ func TestServer_Start_Stop(t *testing.T) {
 	grpcPort := getAvailablePort(t)
 
 	config := Config{
-		HTTPAddr:  httpPort,
 		GRPCAddr:  grpcPort,
 		LogLevel:  "info",
 		LogFormat: "json",
@@ -98,7 +94,6 @@ func TestServer_Start_Stop(t *testing.T) {
 func TestServer_Start_GRPCPortError(t *testing.T) {
 	// Use an invalid gRPC address that will fail to listen
 	config := Config{
-		HTTPAddr:  getAvailablePort(t),
 		GRPCAddr:  "invalid-address:99999", // Invalid address
 		LogLevel:  "info",
 		LogFormat: "json",
@@ -122,11 +117,9 @@ func TestServer_Start_GRPCPortError(t *testing.T) {
 }
 
 func TestServer_Stop_WithError(t *testing.T) {
-	httpPort := getAvailablePort(t)
 	grpcPort := getAvailablePort(t)
 
 	config := Config{
-		HTTPAddr:  httpPort,
 		GRPCAddr:  grpcPort,
 		LogLevel:  "info",
 		LogFormat: "json",
@@ -161,11 +154,9 @@ func TestServer_Stop_WithError(t *testing.T) {
 
 func TestServer_Stop_Timeout(t *testing.T) {
 	// Use available ports for testing
-	httpPort := getAvailablePort(t)
 	grpcPort := getAvailablePort(t)
 
 	config := Config{
-		HTTPAddr:  httpPort,
 		GRPCAddr:  grpcPort,
 		LogLevel:  "info",
 		LogFormat: "json",
@@ -196,7 +187,6 @@ func TestServer_Configuration(t *testing.T) {
 	tests := []struct {
 		name           string
 		config         Config
-		expectedHTTP   string
 		expectedGRPC   string
 		expectedLevel  string
 		expectedFormat string
@@ -204,12 +194,10 @@ func TestServer_Configuration(t *testing.T) {
 		{
 			name: "standard config",
 			config: Config{
-				HTTPAddr:  ":8080",
 				GRPCAddr:  ":9090",
 				LogLevel:  "info",
 				LogFormat: "json",
 			},
-			expectedHTTP:   ":8080",
 			expectedGRPC:   ":9090",
 			expectedLevel:  "info",
 			expectedFormat: "json",
@@ -217,12 +205,10 @@ func TestServer_Configuration(t *testing.T) {
 		{
 			name: "custom config",
 			config: Config{
-				HTTPAddr:  "localhost:8081",
 				GRPCAddr:  "localhost:9091",
 				LogLevel:  "debug",
 				LogFormat: "console",
 			},
-			expectedHTTP:   "localhost:8081",
 			expectedGRPC:   "localhost:9091",
 			expectedLevel:  "debug",
 			expectedFormat: "console",
@@ -235,7 +221,6 @@ func TestServer_Configuration(t *testing.T) {
 			server, err := New(tt.config, logger)
 
 			require.NoError(t, err)
-			assert.Equal(t, tt.expectedHTTP, server.cfg.HTTPAddr)
 			assert.Equal(t, tt.expectedGRPC, server.cfg.GRPCAddr)
 			assert.Equal(t, tt.expectedLevel, server.cfg.LogLevel)
 			assert.Equal(t, tt.expectedFormat, server.cfg.LogFormat)
@@ -243,27 +228,8 @@ func TestServer_Configuration(t *testing.T) {
 	}
 }
 
-func TestServer_HTTPServer_Setup(t *testing.T) {
-	config := Config{
-		HTTPAddr:  ":8080",
-		GRPCAddr:  ":9090",
-		LogLevel:  "info",
-		LogFormat: "json",
-	}
-
-	logger := zaptest.NewLogger(t)
-	server, err := New(config, logger)
-	require.NoError(t, err)
-
-	// Verify HTTP server is configured
-	assert.NotNil(t, server.httpServer)
-	assert.Equal(t, config.HTTPAddr, server.httpServer.Addr)
-	assert.NotNil(t, server.httpServer.Handler)
-}
-
 func TestServer_GRPCServer_Setup(t *testing.T) {
 	config := Config{
-		HTTPAddr:  ":8080",
 		GRPCAddr:  ":9090",
 		LogLevel:  "info",
 		LogFormat: "json",
@@ -274,21 +240,19 @@ func TestServer_GRPCServer_Setup(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify gRPC server is configured
-	assert.NotNil(t, server.grpcServer)
-	assert.NotNil(t, server.grpcHandler)
+	assert.NotNil(t, server.grpc)
+	assert.NotNil(t, server.handler)
 }
 
 func TestServer_Multiple_Instances(t *testing.T) {
 	// Test that we can create multiple server instances with different configs
 	configs := []Config{
 		{
-			HTTPAddr:  getAvailablePort(t),
 			GRPCAddr:  getAvailablePort(t),
 			LogLevel:  "info",
 			LogFormat: "json",
 		},
 		{
-			HTTPAddr:  getAvailablePort(t),
 			GRPCAddr:  getAvailablePort(t),
 			LogLevel:  "debug",
 			LogFormat: "console",
@@ -303,8 +267,6 @@ func TestServer_Multiple_Instances(t *testing.T) {
 			require.NoError(t, err)
 			assert.NotNil(t, server)
 
-			// Verify each instance has its own configuration
-			assert.Equal(t, config.HTTPAddr, server.cfg.HTTPAddr)
 			assert.Equal(t, config.GRPCAddr, server.cfg.GRPCAddr)
 		})
 	}

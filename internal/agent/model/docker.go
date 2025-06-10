@@ -1,4 +1,4 @@
-package metric
+package model
 
 type DockerMetrics struct {
 	ContainerID    string         `json:"container_id"`

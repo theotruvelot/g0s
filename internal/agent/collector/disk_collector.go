@@ -1,31 +1,27 @@
 package collector
 
 import (
+	"github.com/theotruvelot/g0s/internal/agent/model"
 	"strings"
 
 	"github.com/shirou/gopsutil/v4/disk"
-	"github.com/theotruvelot/g0s/internal/agent/model/metric"
 	"go.uber.org/zap"
 )
 
-// DiskCollector collects disk usage and I/O statistics.
 type DiskCollector struct {
 	log *zap.Logger
 }
 
-// NewDiskCollector creates a new DiskCollector instance.
 func NewDiskCollector(log *zap.Logger) *DiskCollector {
 	return &DiskCollector{
 		log: log,
 	}
 }
 
-// isRelevantPartition checks if the partition should be monitored
 func (c *DiskCollector) isRelevantPartition(partition disk.PartitionStat) bool {
 	// Skip virtual or system partitions
 	if strings.HasPrefix(partition.Mountpoint, "/System/Volumes") ||
-		strings.HasPrefix(partition.Mountpoint, "/dev") ||
-		strings.HasPrefix(partition.Mountpoint, "/Library/Developer") {
+		strings.HasPrefix(partition.Mountpoint, "/dev") {
 		return false
 	}
 
@@ -36,7 +32,7 @@ func (c *DiskCollector) isRelevantPartition(partition disk.PartitionStat) bool {
 }
 
 // Collect gathers disk metrics including usage and I/O statistics for relevant mounted partitions.
-func (c *DiskCollector) Collect() ([]metric.DiskMetrics, error) {
+func (c *DiskCollector) Collect() ([]model.DiskMetrics, error) {
 	// Get all physical partitions (false means don't include virtual partitions)
 	partitions, err := disk.Partitions(true)
 	if err != nil {
@@ -44,7 +40,7 @@ func (c *DiskCollector) Collect() ([]metric.DiskMetrics, error) {
 		return nil, err
 	}
 
-	var metrics []metric.DiskMetrics
+	var metrics []model.DiskMetrics
 	for _, partition := range partitions {
 		// Skip irrelevant partitions
 		if !c.isRelevantPartition(partition) {
@@ -59,7 +55,6 @@ func (c *DiskCollector) Collect() ([]metric.DiskMetrics, error) {
 			continue
 		}
 
-		// Only add metrics if the partition has actual space
 		if diskMetric.TotalOctets > 0 {
 			metrics = append(metrics, diskMetric)
 		}
@@ -68,13 +63,12 @@ func (c *DiskCollector) Collect() ([]metric.DiskMetrics, error) {
 	return metrics, nil
 }
 
-func (c *DiskCollector) collectPartitionMetrics(partition disk.PartitionStat) (metric.DiskMetrics, error) {
+func (c *DiskCollector) collectPartitionMetrics(partition disk.PartitionStat) (model.DiskMetrics, error) {
 	usage, err := disk.Usage(partition.Mountpoint)
 	if err != nil {
-		return metric.DiskMetrics{}, err
+		return model.DiskMetrics{}, err
 	}
 
-	// Get IO stats for the device, not the mountpoint
 	ioStats, err := disk.IOCounters()
 	if err != nil {
 		c.log.Debug("Failed to collect disk IO stats",
@@ -85,8 +79,8 @@ func (c *DiskCollector) collectPartitionMetrics(partition disk.PartitionStat) (m
 	return c.buildDiskMetrics(usage, ioStats, partition), nil
 }
 
-func (c *DiskCollector) buildDiskMetrics(usage *disk.UsageStat, ioStats map[string]disk.IOCountersStat, partition disk.PartitionStat) metric.DiskMetrics {
-	diskMetrics := metric.DiskMetrics{
+func (c *DiskCollector) buildDiskMetrics(usage *disk.UsageStat, ioStats map[string]disk.IOCountersStat, partition disk.PartitionStat) model.DiskMetrics {
+	diskMetrics := model.DiskMetrics{
 		Path:        usage.Path,
 		Device:      partition.Device,
 		Fstype:      partition.Fstype,
@@ -96,7 +90,6 @@ func (c *DiskCollector) buildDiskMetrics(usage *disk.UsageStat, ioStats map[stri
 		UsedPercent: usage.UsedPercent,
 	}
 
-	// Try to get IO stats using both device name and mountpoint
 	deviceName := strings.TrimPrefix(partition.Device, "/dev/")
 	if ioStat, exists := ioStats[deviceName]; exists {
 		diskMetrics.ReadCount = ioStat.ReadCount

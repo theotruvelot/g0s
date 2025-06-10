@@ -1,4 +1,4 @@
-package metric
+package model
 
 type DiskMetrics struct {
 	Path        string  `json:"path"`
