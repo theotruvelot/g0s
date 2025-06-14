@@ -3,6 +3,7 @@ package metrics
 import (
 	"bytes"
 	"fmt"
+	"github.com/theotruvelot/g0s/pkg/logger"
 	"net"
 	"net/http"
 	"sync"
@@ -17,25 +18,23 @@ type MetricStore interface {
 	Store(data []string) error
 }
 
-type MetricsManager struct {
+type Manager struct {
 	stores []MetricStore
-	logger *zap.Logger
 }
 
-func NewMetricsManager(vmEndpoint string, logger *zap.Logger) *MetricsManager {
-	return &MetricsManager{
+func NewMetricsManager(vmEndpoint string) *Manager {
+	return &Manager{
 		stores: []MetricStore{
-			NewCPUStore(vmEndpoint, logger),
-			NewRAMStore(vmEndpoint, logger),
-			NewDiskStore(vmEndpoint, logger),
-			NewNetworkStore(vmEndpoint, logger),
-			NewDockerStore(vmEndpoint, logger),
+			NewCPUStore(vmEndpoint),
+			NewRAMStore(vmEndpoint),
+			NewDiskStore(vmEndpoint),
+			NewNetworkStore(vmEndpoint),
+			NewDockerStore(vmEndpoint),
 		},
-		logger: logger,
 	}
 }
 
-func (m *MetricsManager) StoreAllMetrics(metrics *pb.MetricsPayload) error {
+func (m *Manager) StoreAllMetrics(metrics *pb.MetricsPayload) error {
 	timestamp := metrics.Timestamp.AsTime().UnixNano() / int64(time.Millisecond)
 	var wg sync.WaitGroup
 	errors := make(chan error, len(m.stores))
@@ -57,14 +56,14 @@ func (m *MetricsManager) StoreAllMetrics(metrics *pb.MetricsPayload) error {
 	close(errors)
 
 	for err := range errors {
-		m.logger.Error("Failed to store metrics", zap.Error(err))
+		logger.Error("Failed to store metrics", zap.Error(err))
 	}
 
 	return nil
 }
 
 // sendWithRetry envoie les données avec retry automatique
-func sendWithRetry(endpoint, payload string, logger *zap.Logger, metricType string) error {
+func sendWithRetry(endpoint, payload string, metricType string) error {
 	const maxRetries = 3
 	const baseDelay = 500 * time.Millisecond
 	client := &http.Client{

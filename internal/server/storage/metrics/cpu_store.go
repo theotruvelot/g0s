@@ -5,17 +5,14 @@ import (
 	"strings"
 
 	pb "github.com/theotruvelot/g0s/pkg/proto/metric"
-	"go.uber.org/zap"
 )
 
 type CPUStore struct {
-	logger     *zap.Logger
 	vmEndpoint string
 }
 
-func NewCPUStore(vmEndpoint string, logger *zap.Logger) *CPUStore {
+func NewCPUStore(vmEndpoint string) *CPUStore {
 	return &CPUStore{
-		logger:     logger,
 		vmEndpoint: vmEndpoint,
 	}
 }
@@ -78,10 +75,9 @@ func (s *CPUStore) Store(data []string) error {
 	payload := strings.Join(data, "")
 	endpoint := fmt.Sprintf("%s/api/v1/import/prometheus", s.vmEndpoint)
 
-	if err := sendWithRetry(endpoint, payload, s.logger, "CPU"); err != nil {
+	if err := sendWithRetry(endpoint, payload, "CPU"); err != nil {
 		return err
 	}
 
-	s.logger.Debug("CPU metrics stored successfully", zap.Int("metrics_count", len(data)))
 	return nil
 }

@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package auth;
+
+option go_package = "pkg/proto/auth";
+
+service AuthService {
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse) {}
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse) {}
+}
+
+message AuthenticateRequest {
+  string username = 1;
+  string token = 2;
+}
+
+message AuthenticateResponse {
+  enum Status {
+    OK = 0;
+    INVALID_CREDENTIALS = 1;
+    ERROR = 2;
+  }
+  Status status = 1;
+  string jwt_token = 2;
+  string jwt_refresh_token = 3;
+}
+
+message RefreshTokenRequest {
+  string jwt_refresh_token = 1;
+}
+
+message RefreshTokenResponse {
+  enum Status {
+    OK = 0;
+    INVALID_REFRESH_TOKEN = 1;
+    ERROR = 2;
+  }
+  Status status = 1;
+  string jwt_token = 2;
+  string jwt_refresh_token = 3;
+}

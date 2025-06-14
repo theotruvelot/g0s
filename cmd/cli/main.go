@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/theotruvelot/g0s/internal/cli"
+	"github.com/theotruvelot/g0s/internal/cli/config"
 	"github.com/theotruvelot/g0s/pkg/logger"
 	"github.com/theotruvelot/g0s/pkg/utils"
 )
@@ -32,16 +33,13 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "g0s-cli",
 		Short: "g0s CLI",
-		Long:  `g0s CLI`,
+		Long:  `g0s CLI - System monitoring interface`,
 		RunE:  runCLI,
 	}
 
-	rootCmd.Flags().StringVarP(&serverURL, "server", "s", "", "Server URL to request metrics from")
-	rootCmd.Flags().StringVarP(&apiToken, "token", "t", "", "API token for authentication")
+	rootCmd.Flags().StringVarP(&serverURL, "server", "s", "", "Server URL to request metrics from (optional if config exists)")
+	rootCmd.Flags().StringVarP(&apiToken, "token", "t", "", "API token for authentication (optional if config exists)")
 	rootCmd.Flags().StringVarP(&logLevel, "log-level", "l", "info", "Log level: debug, info, warn, error")
-
-	rootCmd.MarkFlagRequired("server")
-	rootCmd.MarkFlagRequired("token")
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -50,13 +48,19 @@ func main() {
 }
 
 func runCLI(_ *cobra.Command, _ []string) error {
-	// Validate server URL first
-	if err := utils.ValidateServerURL(serverURL); err != nil {
-		return &cliError{op: "validating server URL", err: err}
+	hasCliParams := serverURL != "" && apiToken != ""
+	hasConfig := config.ConfigExists()
+
+	if !hasCliParams && !hasConfig {
+		fmt.Println("No configuration found. You will be prompted to enter server details.")
 	}
 
-	// Normalize the URL (remove trailing slash)
-	serverURL = utils.NormalizeServerURL(serverURL)
+	if serverURL != "" {
+		if err := utils.ValidateServerURL(serverURL); err != nil {
+			return &cliError{op: "validating server URL", err: err}
+		}
+		serverURL = utils.NormalizeServerURL(serverURL)
+	}
 
 	logger.InitLogger(logger.Config{
 		Level:      logLevel,
@@ -66,7 +70,7 @@ func runCLI(_ *cobra.Command, _ []string) error {
 	})
 	defer logger.Sync()
 
-	if err := cli.RunWithConfig(serverURL, apiToken, logger.GetLogger()); err != nil {
+	if err := cli.RunWithConfig(serverURL, apiToken); err != nil {
 		return &cliError{op: "running TUI", err: err}
 	}
 

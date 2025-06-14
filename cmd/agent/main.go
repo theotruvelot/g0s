@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/theotruvelot/g0s/internal/agent/model"
 	"math/rand"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/theotruvelot/g0s/internal/agent/model"
 
 	"github.com/spf13/cobra"
 	"github.com/theotruvelot/g0s/internal/agent/collector"

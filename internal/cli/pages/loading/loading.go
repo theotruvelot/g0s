@@ -2,9 +2,7 @@ package loading
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -12,17 +10,18 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/theotruvelot/g0s/internal/cli/clients"
 	"github.com/theotruvelot/g0s/internal/cli/styles"
-	"github.com/theotruvelot/g0s/pkg/client"
+	"github.com/theotruvelot/g0s/pkg/logger"
+	"github.com/theotruvelot/g0s/pkg/proto/health"
 	"go.uber.org/zap"
 )
 
 // Constants
 const (
-	maxRetries         = 3
-	retryDelay         = 2 * time.Second
-	healthCheckTimeout = 10 * time.Second
-	progressBarWidth   = 60
+	maxRetries       = 3
+	retryDelay       = 2 * time.Second
+	progressBarWidth = 60
 )
 
 // LoadingState represents the current state
@@ -39,24 +38,15 @@ const (
 // HealthCheckResult represents the result of a health check
 type HealthCheckResult struct {
 	Success   bool
-	Status    string
+	Status    health.HealthCheckResponse_ServingStatus
 	Latency   string
 	Error     error
 	Timestamp string
 }
 
-// HealthResponse represents the server health response
-type HealthResponse struct {
-	Status    string            `json:"status"`
-	Timestamp string            `json:"timestamp"`
-	Services  map[string]string `json:"services,omitempty"`
-	Version   string            `json:"version,omitempty"`
-}
-
 // Model represents the loading page
 type Model struct {
-	httpClient *client.Client
-	log        *zap.Logger
+	grpcClients *clients.Clients
 
 	spinner  spinner.Model
 	progress progress.Model
@@ -76,7 +66,7 @@ type stepMsg struct {
 }
 
 // NewModel creates a new loading model
-func NewModel(httpClient *client.Client, log *zap.Logger) Model {
+func NewModel(grpcClients *clients.Clients) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(styles.Primary))
@@ -87,11 +77,10 @@ func NewModel(httpClient *client.Client, log *zap.Logger) Model {
 	)
 
 	return Model{
-		httpClient: httpClient,
-		log:        log,
-		spinner:    s,
-		progress:   p,
-		state:      StateConnecting,
+		grpcClients: grpcClients,
+		spinner:     s,
+		progress:    p,
+		state:       StateConnecting,
 	}
 }
 
@@ -108,46 +97,19 @@ func (m Model) Init() tea.Cmd {
 // performHealthCheck performs the health check
 func (m Model) performHealthCheck() tea.Cmd {
 	return func() tea.Msg {
-		m.log.Debug("Performing health check")
-
-		ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
-		defer cancel()
+		logger.Debug("Performing health check")
 
 		start := time.Now()
 		timestamp := time.Now().Format(time.RFC3339)
 
-		resp, err := m.httpClient.Get(ctx, "/health")
+		// Perform the health check
+		res, err := m.grpcClients.HealthcheckClient.Check(context.Background(), &health.HealthCheckRequest{})
 		if err != nil {
-			m.log.Error("Health check failed", zap.Error(err))
+			logger.Error("Health check failed", zap.Error(err))
 			return HealthCheckResult{
 				Success:   false,
-				Status:    "error",
+				Status:    res.Status,
 				Error:     err,
-				Latency:   time.Since(start).String(),
-				Timestamp: timestamp,
-			}
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			err := fmt.Errorf("server returned status %d", resp.StatusCode)
-			m.log.Error("Health check failed", zap.Int("status", resp.StatusCode))
-			return HealthCheckResult{
-				Success:   false,
-				Status:    fmt.Sprintf("HTTP %d", resp.StatusCode),
-				Error:     err,
-				Latency:   time.Since(start).String(),
-				Timestamp: timestamp,
-			}
-		}
-
-		var healthResp HealthResponse
-		if err := json.NewDecoder(resp.Body).Decode(&healthResp); err != nil {
-			m.log.Error("Failed to parse health response", zap.Error(err))
-			return HealthCheckResult{
-				Success:   false,
-				Status:    "parse_error",
-				Error:     fmt.Errorf("failed to parse response: %w", err),
 				Latency:   time.Since(start).String(),
 				Timestamp: timestamp,
 			}
@@ -155,14 +117,14 @@ func (m Model) performHealthCheck() tea.Cmd {
 
 		return HealthCheckResult{
 			Success:   true,
-			Status:    healthResp.Status,
+			Status:    res.Status,
 			Latency:   time.Since(start).String(),
 			Timestamp: timestamp,
 		}
 	}
+
 }
 
-// Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -170,7 +132,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.progress.Width = min(m.width-20, progressBarWidth)
+		newWidth := msg.Width - 20
+		if newWidth < 20 {
+			newWidth = 20
+		}
+		if newWidth > progressBarWidth {
+			newWidth = progressBarWidth
+		}
+		m.progress.Width = newWidth
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -178,7 +147,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "r":
 			if m.state == StateError {
-				m.log.Info("Retrying connection")
+				logger.Info("Retrying connection")
 				m.state = StateConnecting
 				m.error = nil
 				m.retryCount = 0
@@ -240,10 +209,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the loading page
 func (m Model) View() string {
-	if m.width == 0 {
-		return "\n  Initializing..."
-	}
-
 	var content strings.Builder
 
 	// Logo
@@ -292,7 +257,12 @@ func (m Model) View() string {
 	))
 
 	content.WriteString("\n\n")
-	content.WriteString(m.progress.View())
+
+	// Progress bar - always center it
+	progressView := lipgloss.NewStyle().
+		Align(lipgloss.Center).
+		Render(m.progress.View())
+	content.WriteString(progressView)
 	content.WriteString("\n\n")
 
 	// Error message or instructions
@@ -315,7 +285,7 @@ func (m Model) View() string {
 			Render("Please wait..."))
 	}
 
-	// Center everything
+	// Always center content and use full terminal dimensions
 	return lipgloss.NewStyle().
 		Align(lipgloss.Center).
 		AlignVertical(lipgloss.Center).

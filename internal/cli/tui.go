@@ -2,22 +2,48 @@ package cli
 
 import (
 	"fmt"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/theotruvelot/g0s/internal/cli/clients"
+	"github.com/theotruvelot/g0s/internal/cli/config"
 	"github.com/theotruvelot/g0s/internal/cli/models"
-	"github.com/theotruvelot/g0s/pkg/client"
+	"github.com/theotruvelot/g0s/pkg/logger"
 	"go.uber.org/zap"
 )
 
 // RunWithConfig initializes and runs the TUI application
-func RunWithConfig(serverURL, apiToken string, log *zap.Logger) error {
-	log.Info("Starting TUI application",
-		zap.String("server", serverURL))
+func RunWithConfig(serverURL, apiToken string) error {
+	logger.Info("Starting TUI application")
 
-	httpClient := client.NewClient(serverURL, apiToken, 30*time.Second)
+	var grpcClients *clients.Clients
+	var err error
 
-	rootModel := models.NewRootModel(httpClient, log)
+	// If CLI parameters are provided, use them
+	if serverURL != "" && apiToken != "" {
+		logger.Info("Using CLI parameters", zap.String("server", serverURL))
+		grpcClients, err = clients.NewClients(serverURL)
+		if err != nil {
+			logger.Error("Failed to create gRPC clients", zap.Error(err))
+			return fmt.Errorf("failed to create gRPC clients: %w", err)
+		}
+	} else if config.ConfigExists() {
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			logger.Error("Failed to load config", zap.Error(err))
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+		logger.Info("Using config file", zap.String("server", cfg.ServerURL))
+		grpcClients, err = clients.NewClients(cfg.ServerURL)
+		if err != nil {
+			logger.Error("Failed to create gRPC clients", zap.Error(err))
+			return fmt.Errorf("failed to create gRPC clients: %w", err)
+		}
+	} else {
+		logger.Info("No configuration found, will configure after login")
+		grpcClients = nil
+	}
+
+	rootModel := models.NewRootModel(grpcClients)
 
 	program := tea.NewProgram(
 		rootModel,
@@ -28,7 +54,7 @@ func RunWithConfig(serverURL, apiToken string, log *zap.Logger) error {
 	// Run the program
 	finalModel, err := program.Run()
 	if err != nil {
-		log.Error("TUI application failed", zap.Error(err))
+		logger.Error("TUI application failed", zap.Error(err))
 		return fmt.Errorf("failed to run TUI: %w", err)
 	}
 
@@ -39,6 +65,6 @@ func RunWithConfig(serverURL, apiToken string, log *zap.Logger) error {
 		}
 	}
 
-	log.Info("TUI application ended successfully")
+	logger.Info("TUI application ended successfully")
 	return nil
 }

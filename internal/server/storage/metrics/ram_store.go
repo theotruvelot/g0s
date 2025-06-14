@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"github.com/theotruvelot/g0s/pkg/logger"
 	"strings"
 
 	pb "github.com/theotruvelot/g0s/pkg/proto/metric"
@@ -9,13 +10,11 @@ import (
 )
 
 type RAMStore struct {
-	logger     *zap.Logger
 	vmEndpoint string
 }
 
-func NewRAMStore(vmEndpoint string, logger *zap.Logger) *RAMStore {
+func NewRAMStore(vmEndpoint string) *RAMStore {
 	return &RAMStore{
-		logger:     logger,
 		vmEndpoint: vmEndpoint,
 	}
 }
@@ -53,10 +52,10 @@ func (s *RAMStore) Store(data []string) error {
 	payload := strings.Join(data, "")
 	endpoint := fmt.Sprintf("%s/api/v1/import/prometheus", s.vmEndpoint)
 
-	if err := sendWithRetry(endpoint, payload, s.logger, "RAM"); err != nil {
+	if err := sendWithRetry(endpoint, payload, "RAM"); err != nil {
 		return err
 	}
 
-	s.logger.Debug("RAM metrics stored successfully", zap.Int("metrics_count", len(data)))
+	logger.Debug("RAM metrics stored successfully", zap.Int("metrics_count", len(data)))
 	return nil
 }

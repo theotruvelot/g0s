@@ -13,6 +13,7 @@ service MetricService {
   
   // Get metrics for CLI
   rpc GetMetrics(MetricsRequest) returns (MetricsPayload) {}
+  rpc GetMetricsStream(MetricsRequest) returns (stream MetricsPayload) {}
 }
 
 // Request message for getting metrics

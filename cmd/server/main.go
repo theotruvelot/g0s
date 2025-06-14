@@ -8,6 +8,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/theotruvelot/g0s/internal/server/storage/database"
+
 	"github.com/spf13/cobra"
 	"github.com/theotruvelot/g0s/internal/server"
 	"github.com/theotruvelot/g0s/pkg/logger"
@@ -15,20 +17,26 @@ import (
 )
 
 const (
-	_defaultHTTPAddr   = ":8080"
-	_defaultGRPCAddr   = ":9090"
-	_defaultLogLevel   = "info"
-	_defaultLogFormat  = "json"
-	_defaultVMEndpoint = "http://localhost:8428"
-	_shutdownTimeout   = 5 * time.Second
+	_defaultHTTPAddr         = ":8080"
+	_defaultGRPCAddr         = ":9090"
+	_defaultLogLevel         = "info"
+	_defaultLogFormat        = "json"
+	_defaultVMEndpoint       = "http://localhost:8428"
+	_defaultDSN              = "postgresql://root@127.0.0.1:26257/defaultdb?sslmode=disable"
+	_defaultJWTSecret        = "mongigasecret"
+	_defaultJWTRefreshSecret = "mongigasecretrefresh"
+	_shutdownTimeout         = 5 * time.Second
 )
 
 var (
-	httpAddr   string
-	grpcAddr   string
-	logLevel   string
-	logFormat  string
-	vmEndpoint string
+	httpAddr         string
+	grpcAddr         string
+	logLevel         string
+	logFormat        string
+	vmEndpoint       string
+	dsn              string
+	jwtSecret        string
+	jwtRefreshSecret string
 )
 
 type serverError struct {
@@ -56,6 +64,9 @@ func main() {
 	rootCmd.Flags().StringVar(&logLevel, "log-level", _defaultLogLevel, "Log level: debug, info, warn, error")
 	rootCmd.Flags().StringVar(&logFormat, "log-format", _defaultLogFormat, "Log format: json or console")
 	rootCmd.Flags().StringVar(&vmEndpoint, "vm-endpoint", _defaultVMEndpoint, "VictoriaMetrics endpoint")
+	rootCmd.Flags().StringVar(&dsn, "dsn", _defaultDSN, "Database DSN")
+	rootCmd.Flags().StringVar(&jwtSecret, "jwt-secret", _defaultJWTSecret, "JWT secret for signing tokens")
+	rootCmd.Flags().StringVar(&jwtRefreshSecret, "jwt-refresh-secret", _defaultJWTRefreshSecret, "JWT secret for signing refresh tokens")
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -75,11 +86,28 @@ func runServer(_ *cobra.Command, _ []string) error {
 	defer cancel()
 
 	cfg := server.Config{
-		GRPCAddr:   grpcAddr,
-		LogLevel:   logLevel,
-		LogFormat:  logFormat,
-		VMEndpoint: vmEndpoint,
+		GRPCAddr:         grpcAddr,
+		LogLevel:         logLevel,
+		LogFormat:        logFormat,
+		VMEndpoint:       vmEndpoint,
+		JWTSecret:        jwtSecret,
+		JWTRefreshSecret: jwtRefreshSecret,
 	}
+
+	// Initialize database connection
+	_, err := database.Init(dsn)
+	if err != nil {
+		return &serverError{op: "init database", err: err}
+	}
+
+	// Ensure database connection is closed when server shuts down
+	defer func() {
+		if err := database.Close(); err != nil {
+			logger.Error("Failed to close database connection", zap.Error(err))
+		} else {
+			logger.Info("Database connection closed successfully")
+		}
+	}()
 
 	return runServerWithConfig(ctx, cfg)
 }
@@ -94,7 +122,7 @@ func runServerWithConfig(ctx context.Context, cfg server.Config) error {
 		zap.String("log_level", cfg.LogLevel),
 		zap.String("log_format", cfg.LogFormat))
 
-	srv, err := server.New(cfg, logger.GetLogger())
+	srv, err := server.New(cfg)
 	if err != nil {
 		return &serverError{op: "create", err: err}
 	}
