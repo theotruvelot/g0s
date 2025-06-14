@@ -3,49 +3,42 @@ package loading
 import (
 	"errors"
 	"testing"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/theotruvelot/g0s/pkg/client"
-	"go.uber.org/zap"
+	"github.com/theotruvelot/g0s/internal/cli/clients"
 )
 
 func TestNewModel(t *testing.T) {
 	tests := []struct {
 		name      string
 		serverURL string
-		apiToken  string
 	}{
 		{
 			name:      "valid parameters",
-			serverURL: "http://localhost:8080",
-			apiToken:  "test-token",
+			serverURL: "localhost:50051",
 		},
 		{
-			name:      "https URL",
-			serverURL: "https://api.example.com",
-			apiToken:  "test-token",
+			name:      "different server",
+			serverURL: "api.example.com:50051",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := zap.NewNop()
-			httpClient := client.NewClient(tt.serverURL, tt.apiToken, 30*time.Second)
+			grpcClients, err := clients.NewClients(tt.serverURL)
+			if err != nil {
+				t.Fatalf("Failed to create gRPC clients: %v", err)
+			}
 
-			model := NewModel(httpClient, logger)
+			model := NewModel(grpcClients)
 
 			// Check initial state
 			if model.state != StateConnecting {
 				t.Errorf("NewModel() initial state = %v, want %v", model.state, StateConnecting)
 			}
 
-			if model.httpClient == nil {
-				t.Errorf("NewModel() httpClient is nil")
-			}
-
-			if model.log == nil {
-				t.Errorf("NewModel() logger is nil")
+			if model.grpcClients == nil {
+				t.Errorf("NewModel() grpcClients is nil")
 			}
 
 			if model.retryCount != 0 {
@@ -56,9 +49,11 @@ func TestNewModel(t *testing.T) {
 }
 
 func TestModel_Init(t *testing.T) {
-	logger := zap.NewNop()
-	httpClient := client.NewClient("http://localhost:8080", "test-token", 30*time.Second)
-	model := NewModel(httpClient, logger)
+	grpcClients, err := clients.NewClients("localhost:50051")
+	if err != nil {
+		t.Fatalf("Failed to create gRPC clients: %v", err)
+	}
+	model := NewModel(grpcClients)
 
 	cmd := model.Init()
 	if cmd == nil {
@@ -67,9 +62,11 @@ func TestModel_Init(t *testing.T) {
 }
 
 func TestModel_Update_WindowSize(t *testing.T) {
-	logger := zap.NewNop()
-	httpClient := client.NewClient("http://localhost:8080", "test-token", 30*time.Second)
-	model := NewModel(httpClient, logger)
+	grpcClients, err := clients.NewClients("localhost:50051")
+	if err != nil {
+		t.Fatalf("Failed to create gRPC clients: %v", err)
+	}
+	model := NewModel(grpcClients)
 
 	msg := tea.WindowSizeMsg{Width: 80, Height: 24}
 	updatedModel, _ := model.Update(msg)
@@ -118,9 +115,11 @@ func TestModel_Update_KeyMessages(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := zap.NewNop()
-			httpClient := client.NewClient("http://localhost:8080", "test-token", 30*time.Second)
-			model := NewModel(httpClient, logger)
+			grpcClients, err := clients.NewClients("localhost:50051")
+			if err != nil {
+				t.Fatalf("Failed to create gRPC clients: %v", err)
+			}
+			model := NewModel(grpcClients)
 			model.state = tt.initialState
 			if tt.initialState == StateError {
 				model.error = errors.New("test error")
@@ -182,9 +181,11 @@ func TestModel_Update_StepMsg(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := zap.NewNop()
-			httpClient := client.NewClient("http://localhost:8080", "test-token", 30*time.Second)
-			model := NewModel(httpClient, logger)
+			grpcClients, err := clients.NewClients("localhost:50051")
+			if err != nil {
+				t.Fatalf("Failed to create gRPC clients: %v", err)
+			}
+			model := NewModel(grpcClients)
 
 			msg := stepMsg{state: tt.stepState}
 			updatedModel, _ := model.Update(msg)
@@ -247,9 +248,11 @@ func TestModel_Update_HealthCheckResult(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := zap.NewNop()
-			httpClient := client.NewClient("http://localhost:8080", "test-token", 30*time.Second)
-			model := NewModel(httpClient, logger)
+			grpcClients, err := clients.NewClients("localhost:50051")
+			if err != nil {
+				t.Fatalf("Failed to create gRPC clients: %v", err)
+			}
+			model := NewModel(grpcClients)
 			model.retryCount = tt.initialRetries
 
 			updatedModel, _ := model.Update(tt.result)
@@ -302,9 +305,11 @@ func TestModel_View(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := zap.NewNop()
-			httpClient := client.NewClient("http://localhost:8080", "test-token", 30*time.Second)
-			model := NewModel(httpClient, logger)
+			grpcClients, err := clients.NewClients("localhost:50051")
+			if err != nil {
+				t.Fatalf("Failed to create gRPC clients: %v", err)
+			}
+			model := NewModel(grpcClients)
 			model.width = tt.width
 			model.height = tt.height
 

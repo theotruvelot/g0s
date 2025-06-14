@@ -3,21 +3,27 @@ services:
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.118.0
     ports:
-      - 8428:8428 
+      - "8428:8428"
     volumes:
       - vmdata:/storage
     command:
       - "--storageDataPath=/storage"
       - "--httpListenAddr=:8428"
     restart: always
-
+  # Cockroach DB - stores users / token...
+  cockroach:
+    image: cockroachdb/cockroach:v25.2.1
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+    command: start-single-node --insecure 
+    volumes:
+      - "crdbdata:/cockroach/cockroach-data"
   # Grafana - visualization
   grafana:
     image: grafana/grafana:11.5.0
-    depends_on:
-      - "victoriametrics"
     ports:
-      - 3000:3000
+      - "3000:3000"
     volumes:
       - grafanadata:/var/lib/grafana
       - ./grafana/datasources:/etc/grafana/provisioning/datasources
@@ -26,6 +32,9 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     restart: always
 
+
+
 volumes:
   vmdata: {}
-  grafanadata: {} 
+  crdbdata: {}
+  grafanadata: {}

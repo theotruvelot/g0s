@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"fmt"
+	"github.com/theotruvelot/g0s/pkg/logger"
 	"strings"
 
 	pb "github.com/theotruvelot/g0s/pkg/proto/metric"
@@ -9,13 +10,11 @@ import (
 )
 
 type NetworkStore struct {
-	logger     *zap.Logger
 	vmEndpoint string
 }
 
-func NewNetworkStore(vmEndpoint string, logger *zap.Logger) *NetworkStore {
+func NewNetworkStore(vmEndpoint string) *NetworkStore {
 	return &NetworkStore{
-		logger:     logger,
 		vmEndpoint: vmEndpoint,
 	}
 }
@@ -65,10 +64,10 @@ func (s *NetworkStore) Store(data []string) error {
 	payload := strings.Join(data, "")
 	endpoint := fmt.Sprintf("%s/api/v1/import/prometheus", s.vmEndpoint)
 
-	if err := sendWithRetry(endpoint, payload, s.logger, "Network"); err != nil {
+	if err := sendWithRetry(endpoint, payload, "Network"); err != nil {
 		return err
 	}
 
-	s.logger.Debug("Network metrics stored successfully", zap.Int("metrics_count", len(data)))
+	logger.Debug("Network metrics stored successfully", zap.Int("metrics_count", len(data)))
 	return nil
 }

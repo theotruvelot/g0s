@@ -2,53 +2,51 @@ package models
 
 import (
 	"testing"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/theotruvelot/g0s/pkg/client"
-	"go.uber.org/zap"
+	"github.com/theotruvelot/g0s/internal/cli/clients"
 )
 
 func TestNewRootModel(t *testing.T) {
 	tests := []struct {
 		name         string
 		serverURL    string
-		apiToken     string
 		expectNotNil bool
 	}{
 		{
 			name:         "valid parameters",
-			serverURL:    "http://localhost:8080",
-			apiToken:     "test-token",
+			serverURL:    "localhost:50051",
 			expectNotNil: true,
 		},
 		{
-			name:         "empty token",
-			serverURL:    "http://localhost:8080",
-			apiToken:     "",
+			name:         "different server",
+			serverURL:    "api.example.com:50051",
 			expectNotNil: true,
 		},
 		{
-			name:         "https URL",
-			serverURL:    "https://api.example.com",
-			apiToken:     "test-token",
+			name:         "nil clients",
+			serverURL:    "",
 			expectNotNil: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := zap.NewNop()
-			httpClient := client.NewClient(tt.serverURL, tt.apiToken, 30*time.Second)
+			var grpcClients *clients.Clients
+			var err error
 
-			model := NewRootModel(httpClient, logger)
+			if tt.serverURL != "" {
+				grpcClients, err = clients.NewClients(tt.serverURL)
+				if err != nil {
+					t.Fatalf("Failed to create gRPC clients: %v", err)
+				}
+			}
+
+			model := NewRootModel(grpcClients)
 
 			if tt.expectNotNil {
 				if model == nil {
 					t.Errorf("NewRootModel() returned nil, expected non-nil")
-				}
-				if model.log == nil {
-					t.Errorf("NewRootModel() logger is nil")
 				}
 			}
 		})
@@ -56,9 +54,11 @@ func TestNewRootModel(t *testing.T) {
 }
 
 func TestRootModel_Init(t *testing.T) {
-	logger := zap.NewNop()
-	httpClient := client.NewClient("http://localhost:8080", "test-token", 30*time.Second)
-	model := NewRootModel(httpClient, logger)
+	grpcClients, err := clients.NewClients("localhost:50051")
+	if err != nil {
+		t.Fatalf("Failed to create gRPC clients: %v", err)
+	}
+	model := NewRootModel(grpcClients)
 
 	cmd := model.Init()
 	if cmd == nil {
@@ -91,9 +91,11 @@ func TestRootModel_Update(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			logger := zap.NewNop()
-			httpClient := client.NewClient("http://localhost:8080", "test-token", 30*time.Second)
-			model := NewRootModel(httpClient, logger)
+			grpcClients, err := clients.NewClients("localhost:50051")
+			if err != nil {
+				t.Fatalf("Failed to create gRPC clients: %v", err)
+			}
+			model := NewRootModel(grpcClients)
 
 			updatedModel, cmd := model.Update(tt.msg)
 
@@ -114,9 +116,11 @@ func TestRootModel_Update(t *testing.T) {
 }
 
 func TestRootModel_View(t *testing.T) {
-	logger := zap.NewNop()
-	httpClient := client.NewClient("http://localhost:8080", "test-token", 30*time.Second)
-	model := NewRootModel(httpClient, logger)
+	grpcClients, err := clients.NewClients("localhost:50051")
+	if err != nil {
+		t.Fatalf("Failed to create gRPC clients: %v", err)
+	}
+	model := NewRootModel(grpcClients)
 
 	view := model.View()
 	if view == "" {
@@ -125,9 +129,11 @@ func TestRootModel_View(t *testing.T) {
 }
 
 func TestRootModel_HasError(t *testing.T) {
-	logger := zap.NewNop()
-	httpClient := client.NewClient("http://localhost:8080", "test-token", 30*time.Second)
-	model := NewRootModel(httpClient, logger)
+	grpcClients, err := clients.NewClients("localhost:50051")
+	if err != nil {
+		t.Fatalf("Failed to create gRPC clients: %v", err)
+	}
+	model := NewRootModel(grpcClients)
 
 	// Initially should have no error
 	if model.HasError() {

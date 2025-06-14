@@ -133,6 +133,55 @@ var (
 	MetricWarningStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color(Warning)).
 				Bold(true)
+
+	FocusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(Accent))
+
+	// Form styles
+	FormContainerStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color(Border)).
+				Padding(2, 4).
+				Margin(1, 0).
+				Width(60)
+
+	InputStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(Text)).
+			Margin(0, 0, 1, 0)
+
+	InputFocusedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(Primary)).
+				Margin(0, 0, 1, 0)
+
+	InputPlaceholderStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(TextMuted))
+
+	FormButtonStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(Background)).
+			Background(lipgloss.Color(Primary)).
+			Padding(0, 3).
+			Margin(1, 0).
+			Bold(true).
+			Align(lipgloss.Center)
+
+	FormButtonFocusedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(Background)).
+				Background(lipgloss.Color(Secondary)).
+				Padding(0, 3).
+				Margin(1, 0).
+				Bold(true).
+				Align(lipgloss.Center)
+
+	// Logo style
+	LogoStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(Primary)).
+			Bold(true).
+			Align(lipgloss.Center)
+
+	// Help text style
+	HelpTextStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(TextMuted)).
+			Italic(true).
+			Align(lipgloss.Center)
 )
 
 // Helper functions for dynamic styling

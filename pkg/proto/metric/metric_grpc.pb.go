@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	MetricService_StreamMetrics_FullMethodName = "/metric.MetricService/StreamMetrics"
-	MetricService_GetMetrics_FullMethodName    = "/metric.MetricService/GetMetrics"
+	MetricService_StreamMetrics_FullMethodName    = "/metric.MetricService/StreamMetrics"
+	MetricService_GetMetrics_FullMethodName       = "/metric.MetricService/GetMetrics"
+	MetricService_GetMetricsStream_FullMethodName = "/metric.MetricService/GetMetricsStream"
 )
 
 // MetricServiceClient is the client API for MetricService service.
@@ -33,6 +34,7 @@ type MetricServiceClient interface {
 	StreamMetrics(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[MetricsPayload, MetricsResponse], error)
 	// Get metrics for CLI
 	GetMetrics(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (*MetricsPayload, error)
+	GetMetricsStream(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MetricsPayload], error)
 }
 
 type metricServiceClient struct {
@@ -66,6 +68,25 @@ func (c *metricServiceClient) GetMetrics(ctx context.Context, in *MetricsRequest
 	return out, nil
 }
 
+func (c *metricServiceClient) GetMetricsStream(ctx context.Context, in *MetricsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MetricsPayload], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &MetricService_ServiceDesc.Streams[1], MetricService_GetMetricsStream_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[MetricsRequest, MetricsPayload]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type MetricService_GetMetricsStreamClient = grpc.ServerStreamingClient[MetricsPayload]
+
 // MetricServiceServer is the server API for MetricService service.
 // All implementations must embed UnimplementedMetricServiceServer
 // for forward compatibility.
@@ -76,6 +97,7 @@ type MetricServiceServer interface {
 	StreamMetrics(grpc.BidiStreamingServer[MetricsPayload, MetricsResponse]) error
 	// Get metrics for CLI
 	GetMetrics(context.Context, *MetricsRequest) (*MetricsPayload, error)
+	GetMetricsStream(*MetricsRequest, grpc.ServerStreamingServer[MetricsPayload]) error
 	mustEmbedUnimplementedMetricServiceServer()
 }
 
@@ -91,6 +113,9 @@ func (UnimplementedMetricServiceServer) StreamMetrics(grpc.BidiStreamingServer[M
 }
 func (UnimplementedMetricServiceServer) GetMetrics(context.Context, *MetricsRequest) (*MetricsPayload, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMetrics not implemented")
+}
+func (UnimplementedMetricServiceServer) GetMetricsStream(*MetricsRequest, grpc.ServerStreamingServer[MetricsPayload]) error {
+	return status.Errorf(codes.Unimplemented, "method GetMetricsStream not implemented")
 }
 func (UnimplementedMetricServiceServer) mustEmbedUnimplementedMetricServiceServer() {}
 func (UnimplementedMetricServiceServer) testEmbeddedByValue()                       {}
@@ -138,6 +163,17 @@ func _MetricService_GetMetrics_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MetricService_GetMetricsStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(MetricsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(MetricServiceServer).GetMetricsStream(m, &grpc.GenericServerStream[MetricsRequest, MetricsPayload]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type MetricService_GetMetricsStreamServer = grpc.ServerStreamingServer[MetricsPayload]
+
 // MetricService_ServiceDesc is the grpc.ServiceDesc for MetricService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -156,6 +192,11 @@ var MetricService_ServiceDesc = grpc.ServiceDesc{
 			Handler:       _MetricService_StreamMetrics_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
+		},
+		{
+			StreamName:    "GetMetricsStream",
+			Handler:       _MetricService_GetMetricsStream_Handler,
+			ServerStreams: true,
 		},
 	},
 	Metadata: "pkg/proto/metric/metric.proto",

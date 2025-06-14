@@ -70,7 +70,6 @@ func (HealthCheckResponse_ServingStatus) EnumDescriptor() ([]byte, []int) {
 	return file_pkg_proto_health_health_proto_rawDescGZIP(), []int{1, 0}
 }
 
-// HealthCheckRequest is the request for health check
 type HealthCheckRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Hostname      string                 `protobuf:"bytes,1,opt,name=hostname,proto3" json:"hostname,omitempty"` // Optional host to check, can be empty
@@ -115,7 +114,6 @@ func (x *HealthCheckRequest) GetHostname() string {
 	return ""
 }
 
-// HealthCheckResponse is the response from health check
 type HealthCheckResponse struct {
 	state         protoimpl.MessageState            `protogen:"open.v1"`
 	Status        HealthCheckResponse_ServingStatus `protobuf:"varint,1,opt,name=status,proto3,enum=health.HealthCheckResponse_ServingStatus" json:"status,omitempty"`

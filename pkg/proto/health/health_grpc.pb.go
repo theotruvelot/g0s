@@ -29,9 +29,7 @@ const (
 //
 // HealthService provides health check functionality
 type HealthServiceClient interface {
-	// Check performs a health check
 	Check(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (*HealthCheckResponse, error)
-	// Watch streams health check status
 	Watch(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[HealthCheckResponse], error)
 }
 
@@ -78,9 +76,7 @@ type HealthService_WatchClient = grpc.ServerStreamingClient[HealthCheckResponse]
 //
 // HealthService provides health check functionality
 type HealthServiceServer interface {
-	// Check performs a health check
 	Check(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error)
-	// Watch streams health check status
 	Watch(*HealthCheckRequest, grpc.ServerStreamingServer[HealthCheckResponse]) error
 	mustEmbedUnimplementedHealthServiceServer()
 }

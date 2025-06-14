@@ -3,7 +3,6 @@ package collector
 import (
 	"fmt"
 	"github.com/theotruvelot/g0s/internal/agent/model"
-	"github.com/theotruvelot/g0s/pkg/logger"
 	"sync"
 	"time"
 
@@ -177,8 +176,6 @@ func (c *CPUCollector) buildCPUMetrics(
 	}
 	metrics = append(metrics, totalMetric)
 
-	logger.Debug("number of CPU cores", zap.Int("physical", physicalCount), zap.Int("logical", logicalCount))
-
 	for i := 0; i < physicalCount && i < len(cpuTimes); i++ {
 		m := model.CPUMetrics{
 			Model:        fmt.Sprintf("CPU %d", i+1),
@@ -197,8 +194,6 @@ func (c *CPUCollector) buildCPUMetrics(
 		}
 		metrics = append(metrics, m)
 	}
-
-	logger.Debug("Collected CPU metrics", zap.Any("metrics", metrics))
 
 	return metrics
 }

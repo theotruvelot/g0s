@@ -5,17 +5,14 @@ import (
 	"strings"
 
 	pb "github.com/theotruvelot/g0s/pkg/proto/metric"
-	"go.uber.org/zap"
 )
 
 type DiskStore struct {
-	logger     *zap.Logger
 	vmEndpoint string
 }
 
-func NewDiskStore(vmEndpoint string, logger *zap.Logger) *DiskStore {
+func NewDiskStore(vmEndpoint string) *DiskStore {
 	return &DiskStore{
-		logger:     logger,
 		vmEndpoint: vmEndpoint,
 	}
 }
@@ -64,10 +61,9 @@ func (s *DiskStore) Store(data []string) error {
 	payload := strings.Join(data, "")
 	endpoint := fmt.Sprintf("%s/api/v1/import/prometheus", s.vmEndpoint)
 
-	if err := sendWithRetry(endpoint, payload, s.logger, "Disk"); err != nil {
+	if err := sendWithRetry(endpoint, payload, "Disk"); err != nil {
 		return err
 	}
 
-	s.logger.Debug("Disk metrics stored successfully", zap.Int("metrics_count", len(data)))
 	return nil
 }
