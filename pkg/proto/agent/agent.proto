@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package agent;
+
+option go_package = "github.com/theotruvelot/g0s/pkg/proto/agent";
+
+service AgentService {
+  // Create a new agent
+  rpc CreateAgent(CreateAgentRequest) returns (CreateAgentResponse);
+  // List all agents with optional filtering
+  rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
+  // Heartbeat from agent to server
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  // Update agent health status
+  rpc UpdateHealth(UpdateHealthRequest) returns (UpdateHealthResponse);
+  // Stream metrics from agent to server
+  rpc StreamMetrics(stream Metric) returns (stream MetricResponse);
+}
+
+message CreateAgentRequest {
+  string name = 1;
+  string description = 2;
+}
+
+message CreateAgentResponse {
+  string id = 1;
+  string status = 2;
+  string error = 3;
+  string enrollment_token = 4;
+}
+
+message ListAgentsRequest {
+  string filter = 1; // Optional filter for agent names
+}
+
+message ListAgentsResponse {
+  repeated Agent agents = 1;
+}
+
+message Agent {
+  enum AgentStatus {
+    PENDING = 0;
+    ACTIVE = 1;
+    INACTIVE = 2;
+  }
+  enum HealthStatus {
+    UNKNOWN = 0;
+    HEALTHY = 1;
+    UNHEALTHY = 2;
+    DEGRADED = 3;
+  }
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  AgentStatus status = 4;
+  string last_ip = 5;
+  HealthStatus health_status = 6;
+  string last_seen = 7;
+  string health_last_check = 8;
+  string created_at = 9;
+  string updated_at = 10;
+}
+
+message HeartbeatRequest {
+  string agent_id = 1;
+  string token = 2;
+  string ip_address = 3;
+}
+
+message HeartbeatResponse {
+  bool success = 1;
+  string error = 2;
+  string server_time = 3;
+}
+
+message UpdateHealthRequest {
+  string agent_id = 1;
+  string token = 2;
+  HealthStatus health = 3;
+  map<string, string> details = 4; // Additional health details
+}
+
+message UpdateHealthResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message HealthStatus {
+  enum Status {
+    HEALTHY = 0;
+    WARNING = 1;
+    CRITICAL = 2;
+    UNKNOWN = 3;
+  }
+  Status status = 1;
+  string message = 2;
+  int64 timestamp = 3;
+}
+
+message Metric {
+  string agent_id = 1;
+  string token = 2;
+  string name = 3;
+  double value = 4;
+  map<string, string> labels = 5;
+  int64 timestamp = 6;
+}
+
+message MetricResponse {
+  bool success = 1;
+  string error = 2;
+}
