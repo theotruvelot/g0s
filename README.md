@@ -7,7 +7,7 @@
 [![Go version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://golang.org/doc/install)
 
 
-g0s (pronounced "ghost") is a powerful terminal-based server management tool built with Go — fast, intuitive, and lightweight.
+g0s (pronounced "ghost") is a powerful terminal-based server management tool built with Go with server and agent — fast, intuitive, and lightweight.
 
 ## 🚀 Features
 
